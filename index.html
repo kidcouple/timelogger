@@ -1,0 +1,1679 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📋 할일목록 — Time Logger</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <link rel="stylesheet" type="text/css" href="https://npmcdn.com/flatpickr/dist/themes/dark.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/ko.js"></script>
+    <script src="supabaseClient.js"></script>
+
+    <!-- PWA & Mobile Meta -->
+    <link rel="manifest" href="manifest.json?v=9">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Time Logger">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=9">
+
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('service-worker.js');
+            });
+        }
+    </script>
+    <style>
+        :root {
+            --bg: #111318;
+            --panel: #1c1f27;
+            --border: #2a2d35;
+            --primary: #4f8ef7;
+            --green: #3fb950;
+            --red: #f85149;
+            --text: #e6edf3;
+            --sub: #8b949e;
+        }
+
+        /* Desktop Header Nav */
+        .desktop-nav {
+            display: flex;
+            gap: 20px;
+            margin-left: 40px;
+        }
+
+        .desktop-nav a {
+            color: var(--sub);
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            transition: color 0.2s;
+        }
+
+        .desktop-nav a:hover,
+        .desktop-nav a.active {
+            color: var(--primary);
+        }
+
+        @media (max-width: 768px) {
+            .desktop-nav {
+                display: none;
+            }
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        header {
+            background: var(--panel);
+            border-bottom: 1px solid var(--border);
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-shrink: 0;
+        }
+
+        .back {
+            color: var(--sub);
+            text-decoration: none;
+            font-size: 13px;
+        }
+
+        .back:hover {
+            color: var(--text);
+        }
+
+        .title {
+            font-size: 15px;
+            font-weight: 700;
+        }
+
+        .toolbar {
+            margin-left: auto;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        button {
+            background: #2a2d35;
+            color: var(--text);
+            border: 1px solid var(--border);
+            padding: 6px 14px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        button:hover {
+            background: #353840;
+        }
+
+        button.primary {
+            background: var(--primary);
+            border-color: var(--primary);
+            font-weight: 600;
+        }
+
+        button.success {
+            background: var(--green);
+            border-color: var(--green);
+            color: #000;
+            font-weight: 600;
+        }
+
+        label.chk {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: var(--sub);
+            cursor: pointer;
+        }
+
+        .search-box {
+            background: #111;
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 5px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            width: 160px;
+        }
+
+        .grid-wrap {
+            flex: 1;
+            overflow: auto;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            font-size: 12px;
+            table-layout: fixed;
+            /* Keep fixed for resizable columns to work correctly */
+        }
+
+        th {
+            background: var(--panel);
+            color: var(--sub);
+            font-weight: 600;
+            padding: 8px 10px;
+            position: sticky;
+            top: 0;
+            border-bottom: 1px solid var(--border);
+            border-right: 1px solid var(--border);
+            cursor: pointer;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            z-index: 5;
+            height: 36px;
+            position: relative;
+            /* For resizer handle */
+        }
+
+        /* Resizer Handle */
+        .resizer {
+            position: absolute;
+            right: 0;
+            top: 0;
+            height: 100%;
+            width: 5px;
+            background: transparent;
+            cursor: col-resize;
+            z-index: 10;
+        }
+
+        .resizer:hover {
+            background: var(--primary);
+        }
+
+        th:hover {
+            color: var(--text);
+        }
+
+        td {
+            padding: 5px 10px;
+            border-bottom: 1px solid #1e2028;
+            border-right: 1px solid #1e2028;
+            color: #ccc;
+            vertical-align: middle;
+            height: 32px;
+            white-space: normal;
+            /* Allow wrap for long titles */
+            word-break: break-all;
+        }
+
+        tr:hover td {
+            background: #1e2230;
+        }
+
+        .row-done td {
+            opacity: 0.75;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .status-todo {
+            background: rgba(79, 142, 247, .15);
+            color: var(--primary);
+        }
+
+        .status-wip {
+            background: rgba(63, 185, 80, .15);
+            color: var(--green);
+        }
+
+        .status-done {
+            background: rgba(139, 148, 158, .15);
+            color: var(--sub);
+        }
+
+        .type-badge {
+            display: inline-block;
+            padding: 1px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 600;
+            margin-right: 4px;
+        }
+
+        .type-col {
+            background: rgba(163, 113, 247, 0.15);
+            color: #a371f7;
+        }
+
+        /* 에코라인 - Purple */
+        .type-mail {
+            background: rgba(247, 129, 102, 0.15);
+            color: #f78166;
+        }
+
+        /* 메일 - Orange */
+        .type-phone {
+            background: rgba(227, 179, 65, 0.15);
+            color: #e3b341;
+        }
+
+        /* 유선 - Yellow */
+
+        /* Column Classes - Initial Widths */
+        .col-seq {
+            width: 50px;
+            text-align: center;
+            cursor: pointer;
+            color: var(--primary);
+            font-weight: 700;
+            text-decoration: underline;
+        }
+
+        .col-seq:hover {
+            color: #fff;
+            background: var(--primary);
+        }
+
+        .col-title {
+            width: 350px;
+        }
+
+        /* Wider task title */
+        .col-client {
+            width: 100px;
+        }
+
+        .col-req {
+            width: 80px;
+            text-align: center;
+        }
+
+        .col-date {
+            width: 100px;
+            text-align: center;
+        }
+
+        .col-status {
+            width: 80px;
+            text-align: center;
+        }
+
+        .col-type {
+            width: 80px;
+            text-align: center;
+        }
+
+        .col-req-detail {
+            width: 200px;
+        }
+
+        .col-proc {
+            width: 200px;
+        }
+
+        .col-time {
+            width: 80px;
+            text-align: right;
+        }
+
+        .col-act {
+            width: 90px;
+            text-align: center;
+        }
+
+        .img-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .img-item {
+            width: 80px;
+            height: 80px;
+            border-radius: 4px;
+            overflow: hidden;
+            border: 1px solid var(--border);
+            position: relative;
+        }
+
+        .img-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            cursor: pointer;
+        }
+
+        .img-item .del {
+            position: absolute;
+            top: 2px;
+            right: 2px;
+            background: rgba(0, 0, 0, 0.5);
+            color: #fff;
+            border-radius: 50%;
+            width: 16px;
+            height: 16px;
+            font-size: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+
+        /* Modal */
+        .overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, .7);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 300;
+        }
+
+        .modal {
+            background: #1c1f27;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            width: 560px;
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .modal-head {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+            font-weight: 700;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-body {
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .frow {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        label.fl {
+            font-size: 11px;
+            color: var(--sub);
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        input.fi,
+        select.fi,
+        textarea.fi {
+            width: 100%;
+            background: #111318;
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 8px 10px;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+
+        input.fi:focus,
+        select.fi:focus,
+        textarea.fi:focus {
+            border-color: var(--primary);
+            outline: none;
+        }
+
+        .modal-foot {
+            padding: 14px 20px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            align-items: center;
+        }
+
+
+
+        /* Scrollbar styling for better look */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #333;
+            border-radius: 3px;
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding-bottom: 70px;
+            }
+
+            /* Bottom nav space */
+            header {
+                padding: 12px 20px;
+                background: var(--panel);
+                position: sticky;
+                top: 0;
+                z-index: 100;
+                border-bottom: 1px solid var(--border);
+            }
+
+            .title {
+                font-size: 18px;
+            }
+
+            .back {
+                display: none !important;
+            }
+
+            .toolbar {
+                margin-top: 10px;
+                flex-wrap: wrap;
+                justify-content: center !important;
+                gap: 5px;
+            }
+
+            .toolbar input.search-box {
+                width: 100%;
+                margin-bottom: 5px;
+            }
+
+            .mobile-filter-bar {
+                display: flex !important;
+                padding: 10px 16px;
+                background: var(--bg);
+                gap: 8px;
+                border-bottom: 1px solid var(--border);
+            }
+
+            .mobile-filter-bar input {
+                flex: 1;
+                background: var(--panel);
+                border: 1px solid var(--border);
+                color: var(--text);
+                padding: 8px 16px;
+                border-radius: 20px;
+                font-size: 14px;
+            }
+
+            .grid-wrap {
+                display: none !important;
+            }
+
+            .mobile-list {
+                display: flex !important;
+                flex-direction: column;
+                padding: 8px;
+                gap: 8px;
+                overflow-y: auto;
+            }
+
+            .mobile-card {
+                background: var(--panel);
+                border-radius: 10px;
+                padding: 12px 14px;
+                border: 1px solid var(--border);
+                display: flex;
+                flex-direction: column;
+                gap: 6px;
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            }
+
+            .card-top {
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-start;
+                gap: 8px;
+            }
+
+            .card-title {
+                font-weight: 700;
+                font-size: 14px;
+                color: var(--text);
+                flex: 1;
+                display: -webkit-box;
+                -webkit-line-clamp: 1;
+                line-clamp: 1;
+                -webkit-box-orient: vertical;
+                overflow: hidden;
+                word-break: break-all;
+            }
+
+            .card-meta {
+                font-size: 11px;
+                color: var(--sub);
+                display: flex;
+                flex-wrap: wrap;
+                gap: 5px;
+            }
+
+            .card-time {
+                font-family: 'JetBrains Mono', monospace;
+                font-size: 13px;
+                color: var(--primary);
+                font-weight: 700;
+            }
+
+            .bottom-nav {
+                display: flex !important;
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                height: 65px;
+                background: #1c1f27;
+                border-top: 1px solid var(--border);
+                justify-content: space-around;
+                align-items: center;
+                z-index: 200;
+                padding-bottom: env(safe-area-inset-bottom);
+            }
+
+            .nav-item {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 4px;
+                color: var(--sub);
+                text-decoration: none;
+                font-size: 10px;
+                opacity: 0.7;
+            }
+
+            .nav-item.active {
+                color: var(--primary);
+                opacity: 1;
+            }
+
+            .nav-icon {
+                font-size: 20px;
+            }
+
+
+
+            .modal {
+                width: 94%;
+                max-width: 480px;
+                height: auto;
+                max-height: 90vh;
+                border-radius: 12px;
+                display: flex;
+                flex-direction: column;
+                margin: 20px auto;
+            }
+
+            .modal-foot button {
+                flex: 1;
+                font-size: 14px;
+                padding: 12px;
+            }
+
+            /* Compact Mobile Layout for Modal */
+            .modal-body {
+                padding: 8px;
+                gap: 5px;
+            }
+
+            label.fl {
+                font-size: 10px;
+                margin-bottom: 0px;
+                line-height: 1.2;
+            }
+
+            input.fi,
+            select.fi,
+            textarea.fi {
+                padding: 4px 6px;
+                font-size: 11px;
+            }
+
+            .frow {
+                grid-template-columns: 1fr 1fr;
+                gap: 6px;
+            }
+
+            .frow-3 {
+                display: grid;
+                grid-template-columns: 1fr 1fr 1fr;
+                gap: 6px;
+            }
+
+            .mobile-header-actions {
+                display: flex !important;
+                margin-left: auto;
+                gap: 8px;
+                align-items: center;
+            }
+        }
+
+        /* Desktop specific visibility */
+        @media (min-width: 769px) {
+
+            .mobile-filter-bar,
+            .mobile-list,
+            .bottom-nav {
+                display: none !important;
+            }
+        }
+
+        .icon-btn {
+            font-size: 18px !important;
+            padding: 6px 10px !important;
+            line-height: 1 !important;
+        }
+
+        .user-badge {
+            background: rgba(79, 142, 247, 0.15);
+            color: var(--primary);
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            border: 1px solid rgba(79, 142, 247, 0.3);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .user-badge:hover {
+            background: rgba(79, 142, 247, 0.25);
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <a class="back" href="index.html">← 허브</a>
+        <div class="title" style="display:flex; align-items:center; gap:8px">
+            📋 할일목록
+            <div id="userBadge" class="user-badge" onclick="changeUser()">👤 로딩..</div>
+        </div>
+        <div class="mobile-header-actions" style="display:none;">
+            <button class="icon-btn" onclick="refreshData(true)"
+                style="background:transparent; border:none; padding:4px; font-size:20px !important;">🔄</button>
+            <button class="primary" onclick="openModal()" style="padding:6px 12px; font-size:13px;">+ 등록</button>
+        </div>
+        <nav class="desktop-nav">
+            <a href="index.html" class="active">할일목록</a>
+            <a href="timer.html">타이머</a>
+            <a href="clients.html">고객사</a>
+            <a href="projects.html">프로젝트</a>
+        </nav>
+        <div class="toolbar">
+            <input type="text" id="search" class="search-box" placeholder="🔍 검색..." oninput="render()">
+            <div style="display:flex; gap:6px; width:100%; justify-content: space-between; align-items:center">
+                <label class="chk"><input type="checkbox" id="chkHide" checked onchange="render()"> 완료숨김</label>
+                <div style="display:flex; gap:6px">
+                    <span id="syncStatus"
+                        style="font-size:11px; color:var(--sub); align-self:center; margin-right:5px">☁️ 연결 확인
+                        중...</span>
+                    <button class="icon-btn" onclick="refreshData(true)" title="최신 데이터 다시 불러오기 (새로고침)">🔄</button>
+                    <button onclick="downloadCSV()" style="background:#2a2d35; border-color:var(--border);"
+                        title="CSV 백업 다운로드">📥 CSV 백업</button>
+                    <button onclick="document.getElementById('csvInput').click()"
+                        style="background:#2a2d35; border-color:var(--border);" title="CSV 백업 복원 (불러오기)">📤 CSV
+                        복원</button>
+                    <input type="file" id="csvInput" accept=".csv" style="display:none" onchange="importCSV(event)">
+                    <button onclick="sendWeeklyReport()"
+                        style="background:#4a148c; color:white; border-color:#4a148c; font-weight:bold;"
+                        title="주간보고 즉시 발송">📊 주간보고 발송</button>
+                    <button class="primary" onclick="openModal()">+ 등록</button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="mobile-filter-bar" style="display:flex; gap:8px; align-items:center; padding: 10px 12px;">
+        <input type="text" id="mSearch" placeholder="🔍 작업명, 고객사 검색..." oninput="syncAndRender('m')" style="flex:1">
+        <button onclick="toggleMobileDone()" id="btnMobileHide"
+            style="background:var(--panel); border:1px solid var(--border); border-radius:14px; padding:6px 12px; font-size:12px; white-space:nowrap;">완료숨김</button>
+    </div>
+
+    <div class="grid-wrap">
+        <table id="tbl">
+            <thead id="thead"></thead>
+            <tbody id="tbody"></tbody>
+        </table>
+        <div id="empty" class="empty" style="display:none">
+            <div style="font-size:40px;margin-bottom:12px">📋</div>
+            <div>등록된 업무가 없습니다.<br>상단의 [+ 등록] 버튼을 눌러 시작하세요.</div>
+        </div>
+    </div>
+
+    <div id="mList" class="mobile-list"></div>
+
+
+
+    <nav class="bottom-nav">
+        <a href="index.html" class="nav-item active">
+            <span class="nav-icon">📋</span>
+            <span>할일목록</span>
+        </a>
+        <a href="timer.html" class="nav-item">
+            <span class="nav-icon">⏱</span>
+            <span>타이머</span>
+        </a>
+        <a href="clients.html" class="nav-item">
+            <span class="nav-icon">🏢</span>
+            <span>고객사</span>
+        </a>
+        <a href="projects.html" class="nav-item">
+            <span class="nav-icon">📁</span>
+            <span>프로젝트</span>
+        </a>
+    </nav>
+
+
+    <div id="overlay" class="overlay">
+        <div class="modal">
+            <div class="modal-head">
+                <span id="modalTitle">업무 등록</span>
+                <button onclick="closeModal()"
+                    style="background:none;border:none;color:var(--sub);font-size:18px;cursor:pointer">✕</button>
+            </div>
+            <div class="modal-body">
+                <div><label class="fl">작업명 *</label><textarea id="fTitle" class="fi" rows="1" placeholder="작업명을 입력하세요"
+                        style="min-height:36px;"></textarea></div>
+
+                <div class="frow-3">
+                    <div><label class="fl">순번</label><input id="fSeq" class="fi" placeholder="예: 1" maxlength="4"></div>
+                    <div><label class="fl">요청유형</label>
+                        <select id="fReqType" class="fi">
+                            <option value="">(없음)</option>
+                            <option value="에코라인">🟣 에코라인</option>
+                            <option value="메일">🟠 메일</option>
+                            <option value="유선">🟡 유선</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="fl">상태</label>
+                        <select id="fStatus" class="fi">
+                            <option value="todo">📌 대기</option>
+                            <option value="wip">🔄 진행중</option>
+                            <option value="done">✅ 완료</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="frow">
+                    <div>
+                        <label class="fl">담당고객 (마스터)</label>
+                        <select id="fClient" class="fi">
+                            <option value="">(고객사 선택)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="fl">프로젝트 (마스터)</label>
+                        <select id="fProject" class="fi">
+                            <option value="">(프로젝트 선택)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="frow">
+                    <div><label class="fl">신청자</label><input id="fRequester" class="fi" placeholder="홍길동"></div>
+                    <div><label class="fl">신청일자</label><input type="text" id="fReqDate" class="fi"
+                            placeholder="YYYY. MM. DD"></div>
+                </div>
+
+                <div class="frow">
+                    <div><label class="fl">계획 시작</label><input type="text" id="fPStart" class="fi"
+                            placeholder="YYYY. MM. DD"></div>
+                    <div><label class="fl">계획 종료</label><input type="text" id="fPEnd" class="fi"
+                            placeholder="YYYY. MM. DD"></div>
+                </div>
+
+                <div class="frow">
+                    <div><label class="fl">실제 시작</label><input type="text" id="fAStart" class="fi"
+                            placeholder="YYYY. MM. DD"></div>
+                    <div><label class="fl">실제 종료</label><input type="text" id="fAEnd" class="fi"
+                            placeholder="YYYY. MM. DD"></div>
+                </div>
+
+                <div class="frow" style="align-items: flex-end;">
+                    <div style="flex:1">
+                        <label class="fl">수기 입력 시간</label>
+                        <input type="number" step="0.1" id="fActualTime" class="fi" placeholder="시간 단위 (예: 1.5)">
+                    </div>
+                    <div style="font-size:10px;color:var(--primary);margin-bottom:8px;" id="fTotalTimeDisplay">총 0h 0m
+                    </div>
+                </div>
+
+                <div
+                    style="background:rgba(247, 129, 102, 0.1); padding:12px; border-radius:8px; border:1px solid rgba(247, 129, 102, 0.3); margin-top:10px;">
+                    <label
+                        style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; font-weight:600; color:var(--orange);">
+                        <input type="checkbox" id="fIsIssue" style="width:16px; height:16px;">
+                        ⚠️ 주요 이슈 및 특이사항으로 표시 (주간보고 대상)
+                    </label>
+                    <div id="issueFields" style="display:none; margin-top:10px; flex-direction:column; gap:8px;">
+                        <div>
+                            <label class="fl" style="color:var(--orange); font-size:11px;">1. 주요 이슈 및 특이사항</label>
+                            <textarea id="fIssueMemo" class="fi" rows="2" style="background:#1e1e1e;"
+                                placeholder="이슈 내용을 입력하세요."></textarea>
+                        </div>
+                        <div>
+                            <label class="fl" style="color:var(--orange); font-size:11px;">2. 현 진행 상황</label>
+                            <textarea id="fIssueProgress" class="fi" rows="2" style="background:#1e1e1e;"
+                                placeholder="현재 진행 상태를 입력하세요."></textarea>
+                        </div>
+                        <div>
+                            <label class="fl" style="color:var(--orange); font-size:11px;">3. 향후 Follow-up 사항</label>
+                            <textarea id="fIssueFollowUp" class="fi" rows="2" style="background:#1e1e1e;"
+                                placeholder="다음 계획을 입력하세요."></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <label class="fl">요청내역</label>
+                    </div>
+                    <textarea id="fReqDetail" class="fi" rows="4" placeholder="요청된 상세 내역을 입력하세요"></textarea>
+                </div>
+                <div>
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <label class="fl">처리내역 / 메모</label>
+                    </div>
+                    <textarea id="fProcDetail" class="fi" rows="4" placeholder="처리된 상세 내역을 입력하세요"></textarea>
+                </div>
+            </div>
+            <div class="modal-foot">
+                <button onclick="closeModal()" style="background:#333; color:#fff">취소</button>
+                <button class="primary" onclick="saveTask()">저장</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let tasks = JSON.parse(localStorage.getItem('TL_TASKS') || '[]');
+        let logs = JSON.parse(localStorage.getItem('TL_LOGS') || '[]');
+        let clients = JSON.parse(localStorage.getItem('TL_CLIENTS') || '[]');
+        let projects = JSON.parse(localStorage.getItem('TL_PROJECTS') || '[]');
+        let sortKey = '', sortDesc = true;
+        let editId = null;
+
+        function parseLine(str) {
+            let res = [], cur = '', inQuote = false;
+            for (let i = 0; i < str.length; i++) {
+                let c = str[i];
+                if (c === '"' && str[i + 1] === '"') { cur += '"'; i++; }
+                else if (c === '"') { inQuote = !inQuote; }
+                else if (c === ',' && !inQuote) { res.push(cur.trim()); cur = ''; }
+                else { cur += c; }
+            }
+            res.push(cur.trim());
+            return res;
+        }
+
+        async function save() {
+            localStorage.setItem('TL_TASKS', JSON.stringify(tasks));
+            localStorage.setItem('TL_LOGS', JSON.stringify(logs));
+            const syncStatus = document.getElementById('syncStatus');
+            try {
+                if (syncStatus) syncStatus.innerText = '☁️ 동기화 중...';
+                // To minimize heavy uploads, we just upsert tasks and logs blindly for now.
+                const chunkedTasks = [...tasks];
+                while (chunkedTasks.length > 0) {
+                    await supabaseAPI.upsert('tasks', chunkedTasks.splice(0, 50));
+                }
+                if (syncStatus) {
+                    syncStatus.innerText = '☁️ 동기화 완료';
+                    syncStatus.style.color = 'var(--green)';
+                }
+            } catch (e) {
+                console.error("Supabase Save failed:", e);
+                if (syncStatus) {
+                    syncStatus.innerText = '⚠️ 동기화 실패 (DB 확인 필요)';
+                    syncStatus.style.color = 'var(--red)';
+                }
+            }
+        }
+
+        function downloadCSV() {
+            if (tasks.length === 0) {
+                alert("다운로드할 데이터가 없습니다.");
+                return;
+            }
+
+            const headers = [
+                "seq", "title", "reqType", "project", "client", "requester",
+                "reqDate", "pStart", "pEnd", "aStart", "aEnd", "status",
+                "actualTime", "reqDetail", "procDetail", "isIssue", "issueMemo"
+            ];
+
+            const csvRows = [];
+            csvRows.push(headers.join(","));
+
+            tasks.forEach(task => {
+                const values = headers.map(header => {
+                    let val = task[header];
+                    if (val === null || val === undefined) val = "";
+                    // Escape double quotes and wrap in quotes if contains comma
+                    const stringVal = String(val).replace(/"/g, '""');
+                    return `"${stringVal}"`;
+                });
+                csvRows.push(values.join(","));
+            });
+
+            const csvString = "\uFEFF" + csvRows.join("\n"); // Add BOM for Excel Korean support
+            const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            const dateStr = new Date().toISOString().split('T')[0];
+
+            link.setAttribute("href", url);
+            link.setAttribute("download", `timelogger_backup_${dateStr}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        async function importCSV(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                const text = e.target.result;
+                const lines = text.split(/\r?\n/).filter(line => line.trim() !== "");
+                if (lines.length < 2) return;
+
+                const headers = parseLine(lines[0]);
+                const importedTasks = [];
+                for (let i = 1; i < lines.length; i++) {
+                    const values = parseLine(lines[i]);
+                    const task = {};
+                    headers.forEach((header, idx) => {
+                        let key = header.replace(/^\uFEFF/, ""); // Remove BOM
+                        task[key] = values[idx];
+                    });
+                    if (!task.id) task.id = 'T' + (Date.now() + i);
+                    if (!task.createdAt) task.createdAt = new Date().toISOString();
+                    importedTasks.push(task);
+                }
+
+                if (confirm(`${importedTasks.length}건의 데이터를 복원하시겠습니까? (기존 데이터와 병합됩니다)`)) {
+                    // Merge with existing tasks by ID
+                    const existingIds = new Set(tasks.map(t => String(t.id)));
+                    importedTasks.forEach(it => {
+                        if (!existingIds.has(String(it.id))) {
+                            tasks.push(it);
+                        }
+                    });
+                    await save();
+                    render();
+                    alert("복원이 완료되었습니다.");
+                }
+            };
+            reader.readAsText(file, 'utf-8');
+            event.target.value = ""; // Reset input
+        }
+
+
+
+        function taskTime(val) {
+            const t = (typeof val === 'object' && val !== null) ? val : tasks.find(x => String(x.id || x.seq) === String(val));
+            if (!t) return 0;
+            let mins = 0;
+            if (t.actualTime !== null && t.actualTime !== undefined && t.actualTime !== '' && parseFloat(t.actualTime) > 0) {
+                mins += parseFloat(t.actualTime);
+            }
+
+            (logs || []).forEach(l => {
+                const tid = String(l.taskId || '');
+                const targetId = String(t.id || '');
+                const targetSeq = t.seq ? String(t.seq) : '';
+                if (tid === targetId || (targetSeq && tid === targetSeq)) {
+                    if (l.duration) mins += parseFloat(l.duration) || 0;
+                    else if (l.start && l.end) mins += (new Date(l.end) - new Date(l.start)) / 60000;
+                }
+            });
+            return mins;
+        }
+
+        // Resizable Columns logic
+        let isResizing = false;
+        let currentTh = null;
+        let startX = 0;
+        let startWidth = 0;
+
+        function initResizer(th) {
+            const resizer = document.createElement('div');
+            resizer.className = 'resizer';
+            th.appendChild(resizer);
+
+            resizer.addEventListener('mousedown', e => {
+                e.preventDefault();
+                e.stopPropagation();
+                isResizing = true;
+                currentTh = th;
+                startX = e.pageX;
+                startWidth = th.offsetWidth;
+                document.body.style.cursor = 'col-resize';
+            });
+        }
+
+        document.addEventListener('mousemove', e => {
+            if (!isResizing) return;
+            const diff = e.pageX - startX;
+            if (currentTh) {
+                currentTh.style.width = (startWidth + diff) + 'px';
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (isResizing) {
+                isResizing = false;
+                document.body.style.cursor = 'default';
+            }
+        });
+
+        function syncAndRender(source) {
+            const q = source === 'm' ? document.getElementById('mSearch').value : document.getElementById('search').value;
+            document.getElementById('mSearch').value = q;
+            document.getElementById('search').value = q;
+            render();
+        }
+
+        function toggleMobileDone() {
+            const chk = document.getElementById('chkHide');
+            chk.checked = !chk.checked;
+            document.getElementById('btnMobileHide').style.background = chk.checked ? 'var(--primary)' : 'var(--panel)';
+            render();
+        }
+
+        function render() {
+            const tbody = document.getElementById('tbody');
+            const mList = document.getElementById('mList');
+            const hide = document.getElementById('chkHide').checked;
+            const q = document.getElementById('search').value.toLowerCase();
+
+            tbody.innerHTML = '';
+            mList.innerHTML = '';
+
+            let rows = [...tasks];
+
+            // 필터링
+            rows = rows.filter(t => {
+                const currentStatus = t.status || 'todo';
+                if (hide && currentStatus === 'done') return false;
+
+                if (q) {
+                    return (t.title && t.title.toLowerCase().includes(q)) ||
+                        (t.client && t.client.toLowerCase().includes(q)) ||
+                        (t.reqDetail && t.reqDetail.toLowerCase().includes(q)) ||
+                        (t.procDetail && t.procDetail.toLowerCase().includes(q));
+                }
+                return true;
+            });
+
+            // 정렬
+            if (sortKey) {
+                rows.sort((a, b) => {
+                    let av = a[sortKey] || '', bv = b[sortKey] || '';
+                    if (sortKey === 'seq') {
+                        av = parseInt(av) || 0; bv = parseInt(bv) || 0;
+                    }
+                    return sortDesc ? (av < bv ? 1 : -1) : (av > bv ? 1 : -1);
+                });
+            }
+
+            // --- Desktop View ---
+            const HEADERS = [
+                { key: 'seq', label: '순번', cls: 'col-seq' },
+                { key: 'title', label: '작업명', cls: 'col-title' },
+                { key: 'reqType', label: '유형', cls: 'col-type' },
+                { key: 'project', label: '프로젝트', cls: 'col-client' },
+                { key: 'client', label: '담당고객', cls: 'col-client' },
+                { key: 'requester', label: '신청자', cls: 'col-req' },
+                { key: 'reqDate', label: '신청일자', cls: 'col-date' },
+                { key: 'pStart', label: '계획시작', cls: 'col-date' },
+                { key: 'pEnd', label: '계획종료', cls: 'col-date' },
+                { key: 'aStart', label: '실제시작', cls: 'col-date' },
+                { key: 'aEnd', label: '실제종료', cls: 'col-date' },
+                { key: 'status', label: '상태', cls: 'col-status' },
+                { key: 'reqDetail', label: '요청내역', cls: 'col-req-detail' },
+                { key: 'procDetail', label: '처리내역', cls: 'col-proc' },
+                { key: 'time', label: '로그시간', cls: 'col-time' },
+                { key: 'act', label: '액션', cls: 'col-act' }
+            ];
+
+            const thead = document.getElementById('thead');
+            thead.innerHTML = '';
+            const tr = document.createElement('tr');
+            HEADERS.forEach(h => {
+                const th = document.createElement('th');
+                th.className = h.cls;
+                th.textContent = h.label + (sortKey === h.key ? (sortDesc ? ' ▼' : ' ▲') : '');
+
+                if (h.key !== 'act' && h.key !== 'time') {
+                    th.onclick = e => {
+                        if (e.target.classList.contains('resizer')) return;
+                        if (sortKey === h.key) sortDesc = !sortDesc;
+                        else { sortKey = h.key; sortDesc = true; }
+                        render();
+                    };
+                }
+                initResizer(th);
+                tr.appendChild(th);
+            });
+            thead.appendChild(tr);
+
+            let shown = 0;
+            rows.forEach(t => {
+                shown++;
+                const mins = taskTime(t);
+                const hrs = Math.floor(mins / 60), m = Math.round(mins % 60);
+                const currentStatus = t.status || 'todo';
+                const statusMap = {
+                    todo: '<span class="status-badge status-todo">대기</span>',
+                    wip: '<span class="status-badge status-wip">진행중</span>',
+                    done: '<span class="status-badge status-done">완료</span>'
+                };
+                const typeClass = { '에코라인': 'type-col', '메일': 'type-mail', '유선': 'type-phone' }[t.reqType] || '';
+                const typeTag = t.reqType ? `<span class="type-badge ${typeClass}">${t.reqType}</span>` : '';
+
+                // Desktop Table Row
+                const row = document.createElement('tr');
+                if (currentStatus === 'done') row.classList.add('row-done');
+                const isIssueIcon = t.isIssue ? '<span title="주요이슈" style="color:var(--orange);margin-right:4px">⚠️</span>' : '';
+                row.innerHTML = `
+                  <td class="col-seq" onclick="editTask('${t.id || t.seq}')" title="수정">${t.seq || ''}</td>
+                  <td class="col-title" style="white-space:normal;overflow:visible;text-overflow:inherit;">${isIssueIcon}${t.title}</td>
+                  <td class="col-type">${typeTag}</td>
+                  <td class="col-client">${t.project || ''}</td>
+                  <td class="col-client">${t.client || ''}</td>
+                  <td class="col-req">${t.requester || ''}</td>
+                  <td class="col-date">${t.reqDate || ''}</td>
+                  <td class="col-date">${t.pStart || ''}</td>
+                  <td class="col-date">${t.pEnd || ''}</td>
+                  <td class="col-date">${t.aStart || ''}</td>
+                  <td class="col-date">${t.aEnd || ''}</td>
+                  <td class="col-status">${statusMap[currentStatus]}</td>
+                  <td class="col-req-detail" title="${t.reqDetail || ''}">${t.reqDetail || ''}</td>
+                  <td class="col-proc" title="${t.procDetail || ''}">${t.procDetail || ''}</td>
+                  <td class="col-time">${hrs}h ${m}m</td>
+                  <td class="col-act">
+                    <button onclick="location.href='timer.html?taskId=${t.id || t.seq}'" style="padding:3px 6px;font-size:11px;background:var(--primary);color:#fff;border:none" title="타이머">⏱</button>
+                    <button onclick="editTask('${t.id || t.seq}')" style="padding:3px 6px;font-size:11px" title="수정">✏️</button>
+                    <button onclick="deleteTask('${t.id || t.seq}')" style="padding:3px 6px;font-size:11px;color:var(--red)" title="삭제">🗑</button>
+                  </td>`;
+                tbody.appendChild(row);
+
+                // --- Mobile Card ---
+                const card = document.createElement('div');
+                card.className = 'mobile-card';
+                card.onclick = () => editTask(t.id || t.seq);
+                const isIssueIconMob = t.isIssue ? '<span style="color:var(--orange);margin-right:4px">⚠️</span>' : '';
+                card.innerHTML = `
+                    <div class="card-top">
+                        <div class="card-title">${isIssueIconMob}${typeTag}${t.title}</div>
+                        ${statusMap[currentStatus]}
+                    </div>
+                    <div class="card-meta" style="justify-content:space-between; align-items:center;">
+                        <div style="flex:1; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; padding-right:8px;">
+                            📁 ${t.project || '-'} <span style="opacity:0.3">|</span> 
+                            🏢 ${t.client || '-'} <span style="opacity:0.3">|</span> 
+                            👤 ${t.requester || '-'} <span style="opacity:0.3">|</span> 
+                            📅 ~${t.pEnd || '-'}
+                        </div>
+                        <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
+                            <span class="card-time" style="font-size:12px;">⏱ ${hrs}h ${m}m</span>
+                            <button onclick="event.stopPropagation(); deleteTask('${t.id || t.seq}')" style="color:var(--red); background:rgba(255,0,0,0.1); border-radius:6px; border:none; padding:4px 8px; font-size:11px">🗑 삭제</button>
+                        </div>
+                    </div>
+                `;
+                mList.appendChild(card);
+            });
+
+            const statsEl = document.getElementById('stats');
+            if (statsEl) {
+                statsEl.textContent = `검색 결과: ${shown} / 전체: ${tasks.length}`;
+            }
+            const emptyEl = document.getElementById('empty');
+            if (emptyEl) {
+                emptyEl.style.display = shown === 0 ? 'block' : 'none';
+            }
+            const btnMobileHide = document.getElementById('btnMobileHide');
+            if (btnMobileHide) {
+                btnMobileHide.style.background = hide ? 'var(--primary)' : 'var(--panel)';
+            }
+        }
+
+        // Initialize flatpickr
+        let fpStart, fpEnd, fpReq;
+        function initFlatpickr() {
+            const config = {
+                locale: 'ko',
+                dateFormat: 'Y. m. d',
+                allowInput: true,
+                disableMobile: false
+            };
+            fpReq = flatpickr('#fReqDate', config);
+            fpStart = flatpickr('#fPStart', config);
+            fpEnd = flatpickr('#fPEnd', config);
+            flatpickr('#fAStart', config);
+            flatpickr('#fAEnd', config);
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            initFlatpickr();
+            deduplicateTasks(false); // Silent deduplication on load
+        });
+
+        function deduplicateTasks(showMsg = true) {
+            if (tasks.length === 0) {
+                if (showMsg) alert('처리할 데이터가 없습니다.');
+                return;
+            }
+            const seen = new Set();
+            const unique = [];
+            let removedCount = 0;
+            tasks.forEach(t => {
+                const key = (t.seq || '') + '|' + (t.title || '') + '|' + (t.client || '') + '|' + (t.project || '') + '|' + (t.reqDate || '');
+                if (!seen.has(key)) {
+                    seen.add(key);
+                    unique.push(t);
+                } else {
+                    removedCount++;
+                }
+            });
+            if (removedCount > 0) {
+                tasks = unique;
+                save();
+                render();
+                if (showMsg) alert(`중복된 업무 ${removedCount}건을 제거했습니다.`);
+            } else {
+                if (showMsg) alert('중복된 업무가 없습니다.');
+            }
+        }
+
+
+        function openModal(id) {
+            editId = id || null;
+            document.getElementById('modalTitle').textContent = id ? '업무 수정' : '업무 등록';
+
+            if (!fpStart) initFlatpickr();
+
+            const fClient = document.getElementById('fClient');
+            fClient.innerHTML = '<option value="">(고객사 선택)</option>';
+            clients.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c.name;
+                opt.textContent = c.name;
+                fClient.appendChild(opt);
+            });
+
+            const fProject = document.getElementById('fProject');
+            fProject.innerHTML = '<option value="">(프로젝트 선택)</option>';
+            projects.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p.name;
+                opt.textContent = p.name;
+                fProject.appendChild(opt);
+            });
+
+            if (id) {
+                const t = tasks.find(x => (x.id === id || x.seq === id));
+                document.getElementById('fSeq').value = t.seq || '';
+                document.getElementById('fTitle').value = t.title || '';
+                document.getElementById('fProject').value = t.project || '';
+                document.getElementById('fClient').value = t.client || '';
+                document.getElementById('fRequester').value = t.requester || '';
+                document.getElementById('fReqDate').value = t.reqDate || '';
+                document.getElementById('fPStart').value = t.pStart || '';
+                document.getElementById('fPEnd').value = t.pEnd || '';
+                document.getElementById('fAStart').value = t.aStart || '';
+                document.getElementById('fAEnd').value = t.aEnd || '';
+                document.getElementById('fStatus').value = t.status || 'todo';
+                document.getElementById('fReqType').value = t.reqType || '';
+                document.getElementById('fActualTime').value = t.actualTime ? (parseFloat(t.actualTime) / 60).toFixed(1).replace(/\.0$/, '') : '';
+                document.getElementById('fReqDetail').value = t.reqDetail || '';
+                document.getElementById('fProcDetail').value = t.procDetail || '';
+                document.getElementById('fIsIssue').checked = !!t.isIssue;
+                document.getElementById('fIssueMemo').value = t.issueMemo || '';
+                document.getElementById('fIssueProgress').value = t.issueProgress || '';
+                document.getElementById('fIssueFollowUp').value = t.issueFollowUp || '';
+                document.getElementById('issueFields').style.display = t.isIssue ? 'flex' : 'none';
+
+                // Calculate and display total time including timer
+                let timerMins = 0;
+                const targetId = String(t.id || '');
+                const targetSeq = t.seq ? String(t.seq) : '';
+                (logs || []).forEach(l => {
+                    const tid = String(l.taskId || '');
+                    if (tid === targetId || (targetSeq && tid === targetSeq)) {
+                        if (l.duration) timerMins += parseFloat(l.duration) || 0;
+                        else if (l.start && l.end) timerMins += (new Date(l.end) - new Date(l.start)) / 60000;
+                    }
+                });
+                const totalTaskTime = taskTime(t);
+                const toHrs = Math.floor(totalTaskTime / 60);
+                const toMins = Math.round(totalTaskTime % 60);
+                const tHrs = Math.floor(timerMins / 60);
+                const tMins = Math.round(timerMins % 60);
+                document.getElementById('fTotalTimeDisplay').innerHTML = `총 작업시간: <strong>${toHrs}h ${toMins}m</strong> (타이머 ${tHrs}h ${tMins}m 포함)`;
+
+            } else {
+                // Auto-fill for new task
+                const maxSeq = tasks.reduce((max, t) => Math.max(max, parseInt(t.seq) || 0), 0);
+                const now = new Date();
+                const todayStr = now.getFullYear() + '. ' + String(now.getMonth() + 1).padStart(2, '0') + '. ' + String(now.getDate()).padStart(2, '0');
+
+                document.getElementById('fSeq').value = (maxSeq + 1) > 9999 ? 9999 : (maxSeq + 1);
+                document.getElementById('fTitle').value = '';
+                document.getElementById('fProject').value = '';
+                document.getElementById('fClient').value = '';
+                document.getElementById('fRequester').value = '';
+                document.getElementById('fReqDate').value = todayStr;
+                document.getElementById('fPStart').value = todayStr;
+                document.getElementById('fPEnd').value = todayStr;
+                document.getElementById('fAStart').value = '';
+                document.getElementById('fAEnd').value = '';
+                document.getElementById('fStatus').value = 'todo';
+                document.getElementById('fReqType').value = '';
+                document.getElementById('fActualTime').value = '';
+                document.getElementById('fTotalTimeDisplay').innerHTML = `총 작업시간: 0h 0m`;
+                document.getElementById('fReqDetail').value = '';
+                document.getElementById('fProcDetail').value = '';
+                document.getElementById('fIsIssue').checked = false;
+                document.getElementById('fIssueMemo').value = '';
+                document.getElementById('fIssueProgress').value = '';
+                document.getElementById('fIssueFollowUp').value = '';
+                document.getElementById('issueFields').style.display = 'none';
+            }
+            document.getElementById('overlay').style.display = 'flex';
+            document.getElementById('fTitle').focus();
+        }
+
+        function closeModal() { document.getElementById('overlay').style.display = 'none'; }
+
+        let isSaving = false;
+        async function saveTask() {
+            if (isSaving) return;
+            const title = document.getElementById('fTitle').value.trim();
+            if (!title) { alert('작업명은 필수입니다.'); return; }
+
+            isSaving = true;
+            const btn = document.querySelector('.modal-foot .primary');
+            const originalText = btn.textContent;
+            btn.textContent = '저장 중...';
+            btn.disabled = true;
+
+            try {
+                const currentSeq = document.getElementById('fSeq').value.trim();
+                let targetId = editId;
+                let existingTaskIndex = -1;
+
+                if (editId) {
+                    // If in edit mode, find by editId
+                    existingTaskIndex = tasks.findIndex(x => x.id === editId);
+                } else if (currentSeq) {
+                    // If not in edit mode but seq is provided, check for existing task with that seq
+                    existingTaskIndex = tasks.findIndex(x => x.seq === currentSeq);
+                    if (existingTaskIndex !== -1) {
+                        targetId = tasks[existingTaskIndex].id; // Use existing ID
+                    }
+                }
+
+                if (!targetId) {
+                    targetId = 'T' + Date.now(); // Generate new ID if none found
+                }
+
+                const existingTask = existingTaskIndex !== -1 ? tasks[existingTaskIndex] : null;
+
+                const obj = {
+                    id: targetId,
+                    seq: currentSeq,
+                    title,
+                    project: document.getElementById('fProject').value,
+                    client: document.getElementById('fClient').value,
+                    requester: document.getElementById('fRequester').value,
+                    reqDate: document.getElementById('fReqDate').value,
+                    pStart: document.getElementById('fPStart').value,
+                    pEnd: document.getElementById('fPEnd').value,
+                    status: document.getElementById('fStatus').value,
+                    reqType: document.getElementById('fReqType').value,
+                    actualTime: document.getElementById('fActualTime').value.trim() ? Math.round(parseFloat(document.getElementById('fActualTime').value) * 60) : null,
+                    reqDetail: document.getElementById('fReqDetail').value,
+                    procDetail: document.getElementById('fProcDetail').value,
+                    isIssue: document.getElementById('fIsIssue').checked,
+                    issueMemo: document.getElementById('fIssueMemo').value,
+                    issueProgress: document.getElementById('fIssueProgress').value,
+                    issueFollowUp: document.getElementById('fIssueFollowUp').value,
+                    reqImages: [],
+                    procImages: [],
+                    aStart: document.getElementById('fAStart').value,
+                    aEnd: document.getElementById('fAEnd').value,
+                    createdAt: existingTask ? existingTask.createdAt : new Date().toISOString()
+                };
+
+                if (existingTaskIndex !== -1) {
+                    // Update existing task
+                    tasks[existingTaskIndex] = obj;
+                } else {
+                    // Add new task
+                    tasks.unshift(obj);
+                }
+
+                await save();
+                render();
+                closeModal();
+            } catch (e) {
+                console.error(e);
+                alert('저장 중 오류가 발생했습니다.');
+            } finally {
+                isSaving = false;
+                btn.textContent = originalText;
+                btn.disabled = false;
+            }
+        }
+
+        function editTask(id) { openModal(id); }
+        async function deleteTask(id) {
+            if (await TL_Confirm('삭제하시겠습니까?')) {
+                tasks = tasks.filter(x => (String(x.id) !== String(id) && String(x.seq) !== String(id)));
+                try {
+                    await supabaseAPI.delete('tasks', 'id', id);
+                    // Also try to delete by seq in case id didn't match
+                    await supabaseAPI.delete('tasks', 'seq', id);
+                } catch (e) { }
+                await save();
+                render();
+            }
+        }
+
+        render();
+
+        async function refreshData(force = false) {
+            try {
+                // Load local first to ensure we have unsynced data to merge
+                tasks = JSON.parse(localStorage.getItem('TL_TASKS') || '[]');
+                logs = JSON.parse(localStorage.getItem('TL_LOGS') || '[]');
+
+                const loadedClients = await supabaseAPI.getTable('clients');
+                if (loadedClients) clients = loadedClients;
+
+                const loadedProjects = await supabaseAPI.getTable('projects');
+                if (loadedProjects) projects = loadedProjects;
+
+                const loadedTasks = await supabaseAPI.getTable('tasks');
+                if (loadedTasks) {
+                    // Safe Merge: Keep local tasks that are NOT on the server yet
+                    const serverIds = new Set(loadedTasks.filter(t => t.id).map(t => String(t.id)));
+                    const localUnsynced = tasks.filter(t => t.id && !serverIds.has(String(t.id)));
+
+                    // Merge and sort
+                    tasks = [...loadedTasks, ...localUnsynced];
+                    tasks.sort((a, b) => {
+                        const dateA = a.createdAt || '';
+                        const dateB = b.createdAt || '';
+                        return dateB.localeCompare(dateA);
+                    });
+                }
+
+                const loadedLogs = await supabaseAPI.getTable('logs');
+                if (loadedLogs) {
+                    const serverLogIds = new Set(loadedLogs.filter(l => l.sessionId).map(l => String(l.sessionId)));
+                    const localUnsyncedLogs = logs.filter(l => l.sessionId && !serverLogIds.has(String(l.sessionId)));
+                    logs = [...loadedLogs, ...localUnsyncedLogs];
+                }
+
+                localStorage.setItem('TL_CLIENTS', JSON.stringify(clients));
+                localStorage.setItem('TL_PROJECTS', JSON.stringify(projects));
+                localStorage.setItem('TL_TASKS', JSON.stringify(tasks));
+                localStorage.setItem('TL_LOGS', JSON.stringify(logs));
+
+                render();
+                if (force) {
+                    await TL_Alert('최신 데이터를 정상적으로 불러왔습니다.');
+                }
+            } catch (e) {
+                console.error('Supabase load failed:', e);
+                if (force) alert('동기화 실패(네트워크 오류): 로컬 캐시를 사용합니다. \n' + e.message);
+
+                // Fallback to local storage if API fails
+                clients = JSON.parse(localStorage.getItem('TL_CLIENTS') || '[]');
+                projects = JSON.parse(localStorage.getItem('TL_PROJECTS') || '[]');
+                tasks = JSON.parse(localStorage.getItem('TL_TASKS') || '[]');
+                logs = JSON.parse(localStorage.getItem('TL_LOGS') || '[]');
+                render();
+            }
+        }
+
+        document.getElementById('fIsIssue').addEventListener('change', function () {
+            document.getElementById('issueFields').style.display = this.checked ? 'flex' : 'none';
+        });
+
+        async function sendWeeklyReport() {
+            if (!confirm('현재까지의 데이터를 바탕으로 주간보고서를 생성하여 이메일로 발송하시겠습니까?')) return;
+
+            const btn = event.target;
+            const originalText = btn.innerText;
+            btn.innerText = '⏳ 발송 중...';
+            btn.disabled = true;
+
+            try {
+                // Ensure latest data is pushed to DB first
+                await save();
+
+                const user = supabaseAPI.currentUser;
+                // Call the app.py backend API
+                // Assuming app.py is running on the same origin (Cloud Run)
+                const response = await fetch(`/api/weekly-report?user=${encodeURIComponent(user)}`);
+                const result = await response.json();
+
+                if (result.status === 'success') {
+                    await TL_Alert(`✅ 보고서 발송 성공!\n대상: ${result.file}\n결과: ${result.email}`);
+                } else {
+                    throw new Error(result.error || '알 수 없는 오류');
+                }
+            } catch (e) {
+                console.error('Report failed:', e);
+                await TL_Alert(`❌ 발송 실패: ${e.message}`);
+            } finally {
+                btn.innerText = originalText;
+                btn.disabled = false;
+            }
+        }
+
+        refreshData();
+    </script>
+
+    <!-- Custom Confirm/Alert Dialog -->
+    <div id="cAlert"
+        style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:99999; justify-content:center; align-items:center;">
+        <div
+            style="background:#1e2230; padding:24px; border-radius:12px; text-align:center; min-width:280px; max-width:400px; box-shadow:0 8px 32px rgba(0,0,0,0.6); border:1px solid #333845;">
+            <p id="cAlertMsg"
+                style="margin-bottom:24px; font-size:15px; color:#f0f0f0; white-space:pre-wrap; line-height:1.5"></p>
+            <div id="cAlertBtns" style="display:flex; gap:10px; justify-content:center"></div>
+        </div>
+    </div>
+    <script>
+        window.TL_Confirm = function (msg) {
+            return new Promise(resolve => {
+                document.getElementById('cAlertMsg').textContent = msg;
+                const btns = document.getElementById('cAlertBtns');
+                btns.innerHTML = `
+            <button id="cAlertNo" style="flex:1; padding:12px; border-radius:8px; font-weight:bold; background:#5c606e; color:#fff; border:none; cursor:pointer">취소</button>
+            <button id="cAlertYes" style="flex:1; padding:12px; border-radius:8px; font-weight:bold; background:#005fb8; color:#fff; border:none; cursor:pointer">확인</button>
+        `;
+                document.getElementById('cAlert').style.display = 'flex';
+
+                document.getElementById('cAlertNo').onclick = () => { document.getElementById('cAlert').style.display = 'none'; resolve(false); };
+                document.getElementById('cAlertYes').onclick = () => { document.getElementById('cAlert').style.display = 'none'; resolve(true); };
+            });
+        };
+        window.TL_Alert = function (msg) {
+            return new Promise(resolve => {
+                document.getElementById('cAlertMsg').textContent = msg;
+                const btns = document.getElementById('cAlertBtns');
+                btns.innerHTML = `<button id="cAlertOk" style="flex:1; padding:12px; border-radius:8px; font-weight:bold; background:#005fb8; color:#fff; border:none; cursor:pointer">확인</button>`;
+                document.getElementById('cAlert').style.display = 'flex';
+
+                document.getElementById('cAlertOk').onclick = () => { document.getElementById('cAlert').style.display = 'none'; resolve(true); };
+            });
+        };
+    </script>
+    <script>
+        function updateUIUser() {
+            const badge = document.getElementById('userBadge');
+            if (badge) badge.innerText = '👤 ' + supabaseAPI.currentUser;
+        }
+
+        function changeUser() {
+            const newName = prompt('사용자 이름을 입력하세요:', supabaseAPI.currentUser);
+            if (newName && newName.trim()) {
+                supabaseAPI.currentUser = newName.trim();
+                updateUIUser();
+                refreshData(true); // reload for new user
+            }
+        }
+
+        // Initialize user UI
+        updateUIUser();
+        if (!localStorage.getItem('TL_USER')) {
+            // First time or cleared
+            changeUser();
+        }
+    </script>
+</body>
+
+
+</html>
