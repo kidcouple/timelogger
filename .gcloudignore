@@ -1,0 +1,45 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+env/
+
+# Secrets & local env
+.env
+.env.*
+!.env.template
+
+# Logs & temp
+*.log
+server.log
+
+# Large / non-runtime assets
+Archive/
+Documents/
+
+# Scratch & dev junk
+scratch*.js
+
+# Data exports (not needed in container)
+*.csv
+timelogger.db
+timelogger.db-journal
+
+# Node (if any)
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

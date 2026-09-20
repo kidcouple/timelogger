@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>⏱ 타이머 — Time Logger</title>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <link rel="stylesheet" type="text/css" href="https://npmcdn.com/flatpickr/dist/themes/dark.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/ko.js"></script>
+    <script src="supabaseClient.js"></script>
+    <style>
+        :root {
+            --bg: #0a0b0e;
+            --panel: #13171f;
+            --border: #232a35;
+            --primary: #4785ff;
+            --green: #2ea043;
+            --red: #f85149;
+            --purple: #8957e5;
+            --text: #f0f6fc;
+            --sub: #8b949e;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        header {
+            background: var(--panel);
+            border-bottom: 1px solid var(--border);
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-shrink: 0;
+        }
+
+        .back {
+            color: var(--sub);
+            text-decoration: none;
+            font-size: 13px;
+        }
+
+        .back:hover {
+            color: var(--text);
+        }
+
+        .title {
+            font-size: 15px;
+            font-weight: 700;
+        }
+
+        .user-badge {
+            background: rgba(79, 142, 247, 0.15);
+            color: var(--primary);
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            border: 1px solid rgba(79, 142, 247, 0.3);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .desktop-nav {
+            display: flex;
+            gap: 20px;
+            margin-left: 40px;
+        }
+
+        .desktop-nav a {
+            color: var(--sub);
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .desktop-nav a.active {
+            color: var(--primary);
+        }
+
+        .main {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* Sidebar View Mode */
+        .timer-panel {
+            width: 320px;
+            background: var(--panel);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+            box-shadow: 10px 0 30px rgba(0,0,0,0.2);
+            z-index: 5;
+            overflow-y: auto;
+        }
+
+        .sidebar-view {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px 24px;
+            gap: 24px;
+        }
+
+        #timerView { display: flex; }
+        #logEditView { display: none; }
+
+        .timer-clock {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 52px;
+            font-weight: 700;
+            color: var(--primary);
+            letter-spacing: 2px;
+        }
+
+        .timer-clock.running {
+            color: var(--green);
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1 }
+            50% { opacity: .7 }
+        }
+
+        .current-task {
+            text-align: center;
+            font-size: 13px;
+            color: var(--sub);
+            min-height: 40px;
+        }
+
+        .current-task strong {
+            display: block;
+            color: var(--text);
+            font-size: 15px;
+            margin-bottom: 4px;
+        }
+
+        .btn-start {
+            width: 100%;
+            padding: 14px;
+            background: var(--green);
+            border: none;
+            border-radius: 10px;
+            color: #000;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .btn-stop {
+            width: 100%;
+            padding: 14px;
+            background: var(--red);
+            border: none;
+            border-radius: 10px;
+            color: #fff;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .export-btn {
+            width: 100%;
+            padding: 9px;
+            background: #252a36;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--sub);
+            font-size: 11px;
+            cursor: pointer;
+        }
+
+        /* Right Panel */
+        .task-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .search-bar {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            gap: 8px;
+        }
+
+        .search-bar input {
+            flex: 1;
+            background: #111318;
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 8px 12px;
+            border-radius: 6px;
+        }
+
+        .task-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .task-card {
+            background: #1a1e26;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 14px 18px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+        }
+
+        .task-card.active {
+            border-color: var(--green);
+            background: rgba(46, 160, 67, 0.08);
+        }
+
+        .task-name {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .task-meta {
+            font-size: 12px;
+            color: var(--sub);
+            margin-top: 4px;
+        }
+
+        .client-tag {
+            color: var(--primary);
+            font-weight: 600;
+            background: rgba(71, 133, 255, 0.1);
+            padding: 1px 6px;
+            border-radius: 4px;
+        }
+
+        .task-time {
+            text-align: right;
+            font-size: 12px;
+            color: var(--sub);
+            cursor: pointer;
+            padding: 8px;
+            border-radius: 8px;
+        }
+
+        .task-time .accum {
+            display: block;
+            font-weight: 700;
+            color: var(--purple);
+            font-size: 14px;
+        }
+
+        /* Inputs */
+        .big-input-wrap {
+            width: 100%;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 12px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .big-input {
+            background: transparent;
+            border: none;
+            color: var(--text);
+            font-size: 24px;
+            font-weight: 700;
+            width: 60px;
+            text-align: right;
+        }
+
+        .date-input {
+            background: transparent;
+            border: none;
+            color: var(--text);
+            font-size: 15px;
+            cursor: pointer;
+            width: 100%;
+        }
+
+        .modal-btn-ghost {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border);
+            color: var(--sub);
+            padding: 6px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 11px;
+        }
+
+        /* Side History */
+        .side-history-wrap {
+            width: 100%;
+            margin-top: 12px;
+            padding-top: 16px;
+            border-top: 1px dashed var(--border);
+        }
+
+        .side-log-item {
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 8px;
+            padding: 10px 12px;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 11.5px;
+        }
+
+        .side-log-item .log-date { font-weight: 600; color: var(--text); opacity: 0.8; }
+        .side-log-item .log-dur { color: var(--purple); font-weight: 700; margin-left: 6px; }
+        .side-log-item .actions { display: flex; gap: 8px; cursor: pointer; }
+
+        .log-section {
+            border-top: 1px solid var(--border);
+            padding: 12px 16px;
+            max-height: 180px;
+            overflow-y: auto;
+            background: #0d0f14;
+        }
+
+        .log-row {
+            display: flex;
+            gap: 12px;
+            font-size: 11px;
+            color: var(--sub);
+            padding: 4px 0;
+            border-bottom: 1px solid #1a1d24;
+        }
+
+        .log-row .dur { color: var(--purple); font-weight: 600; width: 60px; text-align: right; }
+
+        .bottom-nav {
+            display: none;
+        }
+
+        @media (max-width: 768px) {
+            .bottom-nav {
+                display: flex;
+                position: fixed;
+                bottom: 0; left: 0; right: 0;
+                height: 60px; background: var(--panel);
+                border-top: 1px solid var(--border);
+                justify-content: space-around; align-items: center;
+            }
+            .nav-item { display: flex; flex-direction: column; align-items: center; color: var(--sub); text-decoration: none; font-size: 10px; }
+            .nav-item.active { color: var(--primary); }
+            .timer-panel { width: 100%; border-right: none; }
+            .main { flex-direction: column; overflow-y: auto; }
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <a class="back" href="index.html">← 허브</a>
+        <div class="title" style="display:flex; align-items:center; gap:8px">
+            ⏱ 타이머
+            <div id="userBadge" class="user-badge" onclick="changeUser()">👤 로딩..</div>
+        </div>
+        <nav class="desktop-nav">
+            <a href="index.html">할일목록</a>
+            <a href="timer.html" class="active">타이머</a>
+            <a href="clients.html">고객사</a>
+            <a href="projects.html">프로젝트</a>
+        </nav>
+        <div id="headerInfo" style="margin-left:auto; font-size:12px; color:var(--sub)">작업을 선택하고 시작하세요</div>
+    </header>
+
+    <div class="main">
+        <div class="timer-panel">
+            <!-- SIDEBAR VIEW 1: TIMER -->
+            <div id="timerView" class="sidebar-view">
+                <div id="clock" class="timer-clock">00:00:00</div>
+                <div id="currentTask" class="current-task"><strong>준비됨</strong>업무를 선택해 주세요</div>
+                <button id="mainBtn" class="btn-start" onclick="toggleTimer()">▶ 시작</button>
+                <div style="flex:1"></div>
+                <button class="export-btn" onclick="triggerCloudBackup()">☁️ 클라우드 백업 (Snapshot)</button>
+                <button class="export-btn" onclick="exportData()">📦 데이터 내보내기 (JSON)</button>
+            </div>
+
+            <!-- SIDEBAR VIEW 2: LOG EDIT -->
+            <div id="logEditView" class="sidebar-view" style="gap:16px; align-items:flex-start; padding-top:32px">
+                <div style="display:flex; justify-content:space-between; align-items:center; width:100%; border-bottom:1px solid var(--border); padding-bottom:12px">
+                    <span style="font-weight:700; color:var(--primary)">⏱ 시간 기록/수정</span>
+                    <button onclick="closeEditTime()" style="background:none; border:none; color:var(--sub); font-size:22px; cursor:pointer">×</button>
+                </div>
+
+                <div style="width:100%">
+                    <div id="editTaskTitle" style="font-weight:600; font-size:14px; color:var(--text); line-height:1.4">..</div>
+                    <div id="totalHint" style="font-size:11px; color:var(--primary); font-weight:600">현재 합계: 0시간 0분</div>
+                </div>
+
+                <div style="width:100%">
+                    <label style="font-size:10px; color:var(--sub); text-transform:uppercase; display:block; margin-bottom:6px">작업 일자</label>
+                    <div class="big-input-wrap">
+                        📅 <input type="text" id="manualDate" class="date-input" placeholder="날짜 선택">
+                    </div>
+                </div>
+
+                <div style="width:100%">
+                    <label style="font-size:10px; color:var(--sub); text-transform:uppercase; display:block; margin-bottom:6px">소요 시간</label>
+                    <div class="big-input-wrap">
+                        <input type="number" id="manualHours" class="big-input" placeholder="0"> 시간
+                        <input type="number" id="manualMinutes" class="big-input" placeholder="0"> 분
+                    </div>
+                </div>
+
+                <div style="display:flex; gap:6px; width:100%">
+                    <button class="modal-btn-ghost" onclick="addMinutes(15)">+15분</button>
+                    <button class="modal-btn-ghost" onclick="addMinutes(30)">+30분</button>
+                    <button class="modal-btn-ghost" onclick="addMinutes(60)">+1시간</button>
+                </div>
+
+                <button id="saveManualBtn" onclick="saveManualTime()" style="width:100%; padding:14px; background:var(--primary); color:#fff; border:none; border-radius:10px; font-weight:700; cursor:pointer">저장하기</button>
+                
+                <div id="manualHelpBox" style="background:rgba(71, 133, 255, 0.08); border-radius:10px; padding:10px; border:1px solid rgba(71, 133, 255, 0.15)">
+                    <p style="font-size:10px; color:var(--primary); line-height:1.4">※ 작업 시간을 고치거나 빠진 시간을 추가하세요.</p>
+                </div>
+
+                <div class="side-history-wrap">
+                    <div style="font-size:10px; color:var(--sub); text-transform:uppercase; margin-bottom:10px; font-weight:700">업무별 기록 히스토리</div>
+                    <div id="taskLogHistory"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="task-panel">
+            <div class="search-bar">
+                <input id="searchBox" placeholder="🔍 업무 검색..." oninput="renderList()">
+                <div style="display:flex; gap:4px">
+                    <button id="sortClientBtn" class="export-btn" style="width:40px" onclick="setSort('client')">🏢</button>
+                    <button id="sortDateBtn" class="export-btn" style="width:40px" onclick="setSort('pStart')">📅</button>
+                </div>
+            </div>
+            <div id="taskList" class="task-list"></div>
+            <div class="log-section">
+                <div style="font-size:11px; color:var(--sub); margin-bottom:8px">최근 세션 전체</div>
+                <div id="recentLogs"></div>
+            </div>
+        </div>
+    </div>
+
+    <nav class="bottom-nav">
+        <a href="index.html" class="nav-item"><span>📋</span>할일</a>
+        <a href="timer.html" class="nav-item active"><span>⏱</span>타이머</a>
+    </nav>
+
+    <script>
+        let tasks = [];
+        let logs = [];
+        let active = JSON.parse(localStorage.getItem('TL_ACTIVE') || 'null');
+        let selectedTask = null;
+        let tmr = null;
+        let sortMode = 'default';
+        let selectedTaskIdForEdit = null;
+        let editingLogSessionId = null;
+        const allowedTaskKeys = ['id', 'seq', 'title', 'project', 'client', 'requester', 'reqDate', 'pStart', 'pEnd', 'aStart', 'aEnd', 'status', 'reqType', 'actualTime', 'reqDetail', 'procDetail', 'reqImages', 'procImages', 'createdAt', 'isIssue', 'issueMemo', 'issueProgress', 'issueFollowUp', 'notionlink', 'username', 'isUrgent', 'isImportant', 'subtasks'];
+
+        function getPriorityIcon(t) {
+            if (t.isUrgent && t.isImportant) return '<span style="color:#ff5252; font-weight:bold; margin-right:4px;" title="긴급+중요">🚨</span>';
+            if (t.isUrgent) return '<span style="color:#ff5252; font-weight:bold; margin-right:4px;" title="긴급">🛑</span>';
+            if (t.isImportant) return '<span style="color:#ff9800; font-weight:bold; margin-right:4px;" title="중요">⭐</span>';
+            return '';
+        }
+
+        async function saveTasks(specificT = null) {
+            const targetT = specificT || tasks.find(t => selectedTask && t.id === selectedTask.id);
+            if (targetT) { 
+                try { 
+                    const obj = {};
+                    allowedTaskKeys.forEach(k => obj[k] = (targetT[k] !== undefined ? targetT[k] : null));
+                    await supabaseAPI.upsert('tasks', [obj]); 
+                    delete targetT.isUnsynced; 
+                } catch(e){ console.error("Save tasks failed:", e); } 
+            }
+        }
+        async function saveLogs(specificLog = null) {
+            const logToSave = specificLog || (active && logs.find(l => l.sessionId === active.sessionId));
+            if (logToSave) { try { await supabaseAPI.upsert('logs', logToSave); delete logToSave.isUnsynced; } catch(e){} }
+        }
+
+        function taskAccum(tOrId) {
+            const t = (typeof tOrId === 'object' && tOrId !== null) ? tOrId : tasks.find(x => String(x.id) === String(tOrId));
+            if (!t) return 0;
+            let mins = parseFloat(t.actualTime || 0);
+            mins += logs.filter(l => String(l.taskId) === String(t.id) && l.end).reduce((s, l) => s + (new Date(l.end) - new Date(l.start)) / 60000, 0);
+            return mins;
+        }
+        const fmt = m => {
+            const h = Math.floor(m / 60);
+            const min = Math.round(m % 60);
+            if (h > 0) return `${h}시간 ${min}분`;
+            return `${min}분`;
+        };
+        const fmtTime = d => `${String(Math.floor(d / 3600)).padStart(2, '0')}:${String(Math.floor(d % 3600 / 60)).padStart(2, '0')}:${String(d % 60).padStart(2, '0')}`;
+
+        function tick() {
+            if (!active) return;
+            const d = Math.floor((Date.now() - new Date(active.start).getTime()) / 1000);
+            document.getElementById('clock').textContent = fmtTime(d);
+        }
+        function startTick() { if (tmr) clearInterval(tmr); tmr = setInterval(tick, 1000); tick(); }
+
+        async function toggleTimer() {
+            if (active) {
+                const log = logs.find(l => l.sessionId === active.sessionId);
+                const sessionMin = Math.round((new Date() - new Date(active.start)) / 60000);
+                if (log) { log.end = new Date().toISOString(); log.duration = sessionMin; }
+                if (tmr) clearInterval(tmr);
+                document.getElementById('clock').textContent = '00:00:00';
+                document.getElementById('clock').classList.remove('running');
+                document.getElementById('mainBtn').textContent = '▶ 시작';
+                const stoppingActive = active; active = null;
+                localStorage.setItem('TL_ACTIVE', 'null');
+
+                // 타이머로 작업한 결과를 task에 반영: 실제시작일(aStart) 자동 채움 + 소요시간 누적.
+                // 이렇게 해야 주간보고서(actualTime>0 & aStart 기준)에서 누락되지 않는다.
+                const tIdx = tasks.findIndex(t => String(t.id) === String(stoppingActive.taskId));
+                if (tIdx !== -1) {
+                    const tk = tasks[tIdx];
+                    const d = new Date();
+                    const todayStr = `${d.getFullYear()}. ${String(d.getMonth() + 1).padStart(2, '0')}. ${String(d.getDate()).padStart(2, '0')}`;
+                    if (!tk.aStart || !String(tk.aStart).trim() || String(tk.aStart).trim() === '"') {
+                        tk.aStart = todayStr;
+                    }
+                    tk.actualTime = Math.round(parseFloat(tk.actualTime || 0)) + sessionMin;
+                    tk.isUnsynced = true;
+                    await saveTasks(tk);
+                }
+
+                await saveLogs(stoppingActive);
+                renderList(); renderRecentLogs();
+            } else {
+                if (!selectedTask) { alert('업무를 선택해 주세요.'); return; }
+                if (selectedTask.status === 'todo') { 
+                    selectedTask.status = 'wip'; 
+                    const tIdx = tasks.findIndex(t => t.id === selectedTask.id);
+                    if (tIdx !== -1) tasks[tIdx].status = 'wip';
+                    saveTasks();
+                }
+                const sessionId = 'S' + Date.now();
+                active = { taskId: selectedTask.id, start: new Date().toISOString(), sessionId };
+                logs.push({ sessionId, taskId: selectedTask.id, taskTitle: selectedTask.title, start: active.start, end: null, duration: 0, isUnsynced: true });
+                localStorage.setItem('TL_ACTIVE', JSON.stringify(active));
+                saveLogs();
+                document.getElementById('clock').classList.add('running');
+                document.getElementById('mainBtn').textContent = '■ 중지';
+                startTick(); renderList();
+            }
+        }
+
+        async function selectTask(t) {
+            if (active) { if (!(await TL_Confirm('타이머를 중지하고 변경할까요?'))) return; toggleTimer(); }
+            selectedTask = t;
+            document.getElementById('currentTask').innerHTML = `<strong>${t.title}</strong><span>${t.client || ''}${t.project ? ' · ' + t.project : ''}</span>`;
+            document.getElementById('headerInfo').textContent = `선택: ${t.title}`;
+            renderList();
+        }
+
+        function setSort(mode) {
+            sortMode = (sortMode === mode) ? 'default' : mode;
+            renderList();
+        }
+
+        function renderList() {
+            const q = document.getElementById('searchBox').value.toLowerCase();
+            const el = document.getElementById('taskList');
+            const showTasks = tasks.filter(t => t.status !== 'done' && (!q || (String(t.title || '') + String(t.client || '') + String(t.project || '')).toLowerCase().includes(q)));
+            el.innerHTML = '';
+            let sorted = [...showTasks];
+            if (sortMode === 'client') sorted.sort((a, b) => (a.client || 'Z').localeCompare(b.client || 'Z'));
+            else if (sortMode === 'pStart') sorted.sort((a, b) => (a.pStart || '9').localeCompare(b.pStart || '9'));
+            sorted.sort((a,b) => (active && a.id === active.taskId) ? -1 : (active && b.id === active.taskId) ? 1 : 0);
+            sorted.forEach(t => {
+                const accum = Math.round(taskAccum(t));
+                const d = document.createElement('div');
+                d.className = `task-card${(active && active.taskId === t.id) || (selectedTask && selectedTask.id === t.id) ? ' active' : ''}`;
+                d.innerHTML = `<div class="task-info">
+                        <div class="task-name">${active && active.taskId === t.id ? '🔴 ' : ''}${getPriorityIcon(t)}${t.title}</div>
+                        <div class="task-meta"><span class="client-tag">${t.client || '미지정'}</span>${t.project ? ' · ' + t.project : ''}</div>
+                    </div>
+                    <div class="task-time" onclick="event.stopPropagation(); openEditTime('${t.id}')">
+                        <span class="accum">${fmt(accum)}</span>누적
+                    </div>`;
+                d.onclick = () => selectTask(t);
+                el.appendChild(d);
+            });
+        }
+
+        function renderRecentLogs() {
+            const el = document.getElementById('recentLogs');
+            const recent = logs.filter(l => l.end).slice(-15).reverse();
+            el.innerHTML = recent.map(l => {
+                const s = new Date(l.start), e = new Date(l.end);
+                return `<div class="log-row"><span>${l.taskTitle}</span><span>${s.toLocaleDateString('ko')} ${s.toLocaleTimeString('ko',{hour:'2-digit',minute:'2-digit'})}</span><span class="dur">${fmt(l.duration)}</span></div>`;
+            }).join('');
+        }
+
+        function openEditTime(taskId) {
+            const t = tasks.find(x => String(x.id) === String(taskId));
+            if (!t) return;
+            selectedTaskIdForEdit = taskId;
+            editingLogSessionId = null;
+            document.getElementById('editTaskTitle').textContent = t.title;
+            document.getElementById('saveManualBtn').textContent = '저장하기';
+            
+            const taskLogs = logs.filter(l => String(l.taskId) === String(taskId) && l.start);
+            if (taskLogs.length > 0) {
+                const sorted = [...taskLogs].sort((a,b) => new Date(b.start) - new Date(a.start));
+                defDate = new Date(sorted[0].start);
+            } else {
+                defDate = new Date();
+            }
+            
+            const defDateStr = defDate.getFullYear() + '. ' + String(defDate.getMonth() + 1).padStart(2, '0') + '. ' + String(defDate.getDate()).padStart(2, '0');
+            document.getElementById('manualDate').value = defDateStr;
+            if (fpManualDate) fpManualDate.setDate(defDateStr);
+            
+            document.getElementById('manualHours').value = 0;
+            document.getElementById('manualMinutes').value = 0;
+            document.getElementById('totalHint').textContent = `현재 합계: ${fmt(taskAccum(t))}`;
+            renderTaskHistory(taskId);
+            document.getElementById('timerView').style.display = 'none';
+            document.getElementById('logEditView').style.display = 'flex';
+        }
+
+        function renderTaskHistory(taskId) {
+            const container = document.getElementById('taskLogHistory');
+            const taskLogs = logs.filter(l => String(l.taskId) === String(taskId) && l.end).sort((a,b) => new Date(b.start) - new Date(a.start));
+            if (taskLogs.length === 0) { container.innerHTML = '<div style="font-size:11px;color:var(--sub);text-align:center">기록 없음</div>'; return; }
+            container.innerHTML = taskLogs.map(l => {
+                const d = new Date(l.start);
+                return `<div class="side-log-item">
+                    <div>
+                        <div class="log-date">${d.toLocaleDateString('ko')} <span style="font-weight:400;font-size:10px;opacity:0.6">${d.toLocaleTimeString('ko',{hour:'2-digit',minute:'2-digit'})}</span></div>
+                        <div style="font-size:10px;color:var(--sub)">${fmt(l.duration)}${l.isManual ? ' [수동]' : ''}</div>
+                    </div>
+                    <div class="actions">
+                        <span onclick="editExistingLog('${l.sessionId}')">✏️</span>
+                        <span onclick="deleteLog('${l.sessionId}')">🗑️</span>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        function editExistingLog(sid) {
+            const l = logs.find(x => x.sessionId === sid);
+            if (!l) return;
+            editingLogSessionId = sid;
+            const d = new Date(l.start);
+            const dStr = d.getFullYear() + '. ' + String(d.getMonth() + 1).padStart(2, '0') + '. ' + String(d.getDate()).padStart(2, '0');
+            document.getElementById('manualDate').value = dStr;
+            if (fpManualDate) fpManualDate.setDate(dStr);
+            document.getElementById('manualHours').value = Math.floor(l.duration / 60);
+            document.getElementById('manualMinutes').value = Math.round(l.duration % 60);
+            document.getElementById('saveManualBtn').textContent = '기록 업데이트';
+            document.getElementById('manualHours').focus();
+        }
+
+        async function deleteLog(sid) {
+            if (!(await TL_Confirm('이 기록을 삭제할까요?'))) return;
+            const idx = logs.findIndex(x => x.sessionId === sid);
+            if (idx !== -1) {
+                const removed = logs[idx];
+                const removedDuration = parseFloat(removed.duration) || 0;
+                logs.splice(idx, 1);
+                try { await supabaseAPI.delete('logs', 'sessionid', sid); } catch(e){}
+                const t = tasks.find(x => String(x.id) === String(selectedTaskIdForEdit));
+                if (t && removedDuration) {
+                    await syncTaskAfterTimeLog(t, t.aStart || '', -removedDuration);
+                }
+                if (editingLogSessionId === sid) openEditTime(selectedTaskIdForEdit);
+                else { renderTaskHistory(selectedTaskIdForEdit); document.getElementById('totalHint').textContent = `현재 합계: ${fmt(taskAccum(selectedTaskIdForEdit))}`; }
+                renderList(); renderRecentLogs();
+            }
+        }
+
+        function closeEditTime() { document.getElementById('logEditView').style.display = 'none'; document.getElementById('timerView').style.display = 'flex'; }
+        function addMinutes(m) {
+            const hF = document.getElementById('manualHours'), mF = document.getElementById('manualMinutes');
+            let total = (parseInt(hF.value)||0)*60 + (parseInt(mF.value)||0) + m;
+            if (total < 0) total = 0;
+            hF.value = Math.floor(total/60); mF.value = total%60;
+        }
+
+        async function syncTaskAfterTimeLog(task, dateStr, minutesDelta) {
+            if (!task || !minutesDelta) return;
+            const ds = (dateStr || '').trim();
+            if (ds) task.aStart = ds;
+            const next = Math.round(parseFloat(task.actualTime || 0) + minutesDelta);
+            task.actualTime = next > 0 ? next : null;
+            task.isUnsynced = true;
+            await saveTasks(task);
+        }
+
+        async function saveManualTime() {
+            const ds = document.getElementById('manualDate').value, h = parseInt(document.getElementById('manualHours').value)||0, m = parseInt(document.getElementById('manualMinutes').value)||0;
+            if (h === 0 && m === 0) return;
+            if (!ds) { alert('날짜를 선택하세요'); return; }
+            const t = tasks.find(x => String(x.id) === String(selectedTaskIdForEdit));
+            if (t) {
+                const total = h*60 + m;
+                // Convert YYYY. MM. DD to YYYY-MM-DD for Date constructor
+                const cleanDs = ds.replace(/\.\s*/g, '-').replace(/-$/, '');
+                const start = new Date(`${cleanDs}T12:00:00`).toISOString(), end = new Date(new Date(start).getTime() + total*60000).toISOString();
+                if (editingLogSessionId) {
+                    const l = logs.find(x => x.sessionId === editingLogSessionId);
+                    if (l) {
+                        const oldDuration = parseFloat(l.duration) || 0;
+                        l.start = start; l.end = end; l.duration = total; l.isManual = true;
+                        await saveLogs(l);
+                        await syncTaskAfterTimeLog(t, ds, total - oldDuration);
+                    }
+                } else {
+                    const sid = 'M'+Date.now();
+                    const nl = { sessionId: sid, taskId: t.id, taskTitle: t.title, start, end, duration: total, isManual: true, isUnsynced: true };
+                    logs.push(nl);
+                    await saveLogs(nl);
+                    await syncTaskAfterTimeLog(t, ds, total);
+                }
+                closeEditTime(); renderList(); renderRecentLogs();
+            }
+        }
+
+        async function refreshData() {
+            try {
+                const lt = await supabaseAPI.getTable('tasks'), ll = await supabaseAPI.getTable('logs');
+                if (lt) {
+                    tasks = lt;
+                    tasks.sort((a,b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+                }
+                if (ll) {
+                    logs = ll;
+                }
+                init();
+            } catch(e) { console.error(e); init(); }
+        }
+
+        function init() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const tid = urlParams.get('taskId');
+            if (active) {
+                const t = tasks.find(x => String(x.id) === String(active.taskId));
+                if (t) {
+                    selectedTask = t;
+                    document.getElementById('currentTask').innerHTML = `<strong>${t.title}</strong><span>${t.client || ''}</span>`;
+                    document.getElementById('mainBtn').textContent = '■ 중지';
+                    document.getElementById('mainBtn').className = 'btn-stop';
+                    document.getElementById('clock').classList.add('running');
+                    startTick();
+                }
+            } else if (tid) {
+                const t = tasks.find(x => String(x.id) === String(tid));
+                if (t) selectTask(t);
+            }
+            renderList(); renderRecentLogs();
+        }
+
+        let fpManualDate = null;
+        function initFlatpickr() {
+            fpManualDate = flatpickr('#manualDate', {
+                locale: 'ko',
+                dateFormat: 'Y. m. d',
+                allowInput: true,
+                disableMobile: false
+            });
+        }
+        document.addEventListener('DOMContentLoaded', initFlatpickr);
+
+        async function triggerCloudBackup() {
+            try { const r = await (await fetch('/api/backup', {method:'POST'})).json(); TL_Alert(r.status === 'success' ? '스냅샷 생성 완료' : '백업 실패'); }
+            catch(e){ TL_Alert('오류 발생'); }
+        }
+        function exportData() {
+            const blob = new Blob([JSON.stringify({tasks, logs}, null, 2)], {type:'application/json'});
+            const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `timelogger_${new Date().toISOString().split('T')[0]}.json`; a.click();
+        }
+
+        window.TL_Confirm = msg => new Promise(res => {
+            document.getElementById('cAlertMsg').textContent = msg;
+            document.getElementById('cAlertBtns').innerHTML = `<button onclick="closeAlert(false)" style="flex:1;padding:12px;border-radius:8px;background:#5c606e;color:#fff;border:none">취소</button><button onclick="closeAlert(true)" style="flex:1;padding:12px;border-radius:8px;background:#005fb8;color:#fff;border:none">확인</button>`;
+            document.getElementById('cAlert').style.display = 'flex';
+            window.closeAlert = val => { document.getElementById('cAlert').style.display='none'; res(val); };
+        });
+        window.TL_Alert = msg => new Promise(res => {
+            document.getElementById('cAlertMsg').textContent = msg;
+            document.getElementById('cAlertBtns').innerHTML = `<button onclick="closeAlert(true)" style="flex:1;padding:12px;border-radius:8px;background:#005fb8;color:#fff;border:none">확인</button>`;
+            document.getElementById('cAlert').style.display = 'flex';
+            window.closeAlert = () => { document.getElementById('cAlert').style.display='none'; res(true); };
+        });
+        function changeUser() {
+            const n = prompt('이름:', supabaseAPI.currentUser);
+            if (n && n.trim()) { supabaseAPI.currentUser = n.trim(); location.reload(); }
+        }
+        document.getElementById('userBadge').innerText = '👤 ' + supabaseAPI.currentUser;
+        refreshData();
+    </script>
+
+    <div id="cAlert" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:99999; justify-content:center; align-items:center;">
+        <div style="background:#1e2230; padding:24px; border-radius:12px; text-align:center; min-width:280px; max-width:400px; box-shadow:0 8px 32px rgba(0,0,0,0.6); border:1px solid #333845;">
+            <p id="cAlertMsg" style="margin-bottom:24px; font-size:15px; color:#f0f0f0; white-space:pre-wrap; line-height:1.5"></p>
+            <div id="cAlertBtns" style="display:flex; gap:10px; justify-content:center"></div>
+        </div>
+    </div>
+</body>
+</html>
