@@ -1,11 +1,12 @@
-const CACHE_NAME = 'time-logger-v17';
+const CACHE_NAME = 'time-logger-v18';
 const ASSETS = [
-  '/',
-  '/index.html',
-  '/timer.html',
-  '/clients.html',
-  '/projects.html',
-  '/supabaseClient.js'
+  './',
+  './index.html',
+  './timer.html',
+  './clients.html',
+  './projects.html',
+  './supabaseClient.js',
+  './public-config.json'
 ];
 
 self.addEventListener('install', (event) => {
@@ -30,7 +31,7 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   // API 요청, POST 요청은 서비스워커가 캐싱하지 않음
-  if (event.request.method !== 'GET' || event.request.url.includes('/api/')) {
+  if (event.request.method !== 'GET' || event.request.url.includes('/api/') || event.request.url.includes('supabase.co')) {
     return;
   }
 

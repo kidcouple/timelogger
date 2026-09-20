@@ -1,7 +1,7 @@
 {
   "name": "Time Logger",
   "short_name": "TimeLogger",
-  "start_url": "/index.html",
+  "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#111318",
   "theme_color": "#1c1f27",
