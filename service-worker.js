@@ -1,4 +1,4 @@
-const CACHE_NAME = 'time-logger-v19';
+const CACHE_NAME = 'time-logger-v20';
 const ASSETS = [
   './',
   './index.html',
@@ -7,6 +7,7 @@ const ASSETS = [
   './projects.html',
   './supabaseClient.js',
   './weeklyReportExcel.js',
+  './echoline.js',
   './public-config.json'
 ];
 

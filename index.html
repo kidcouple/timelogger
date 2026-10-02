@@ -12,6 +12,7 @@
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/ko.js"></script>
     <script src="supabaseClient.js"></script>
     <script src="weeklyReportExcel.js"></script>
+    <script src="echoline.js"></script>
 
     <!-- PWA & Mobile Meta -->
     <link rel="manifest" href="manifest.json?v=9">
@@ -897,6 +898,7 @@
             <div style="display:flex; border:1px solid rgba(107,63,200,0.6); border-radius:6px; overflow:hidden; margin-right:5px;">
                 <button onclick="generateAndOpenWeeklyReport(this)" style="padding:5px 9px; border:none; background:#4a148c; color:white; font-weight:600; cursor:pointer; font-size:12px; white-space:nowrap;" title="주간보고 자동 생성 및 엑셀 열기">📊 주간보고 생성</button>
                 <button onclick="openWorkingTimeModal()" style="padding:5px 9px; border:none; border-left:1px solid rgba(107,63,200,0.4); background:#3f51b5; color:white; font-weight:600; cursor:pointer; font-size:12px; white-space:nowrap;" title="상세 작업시간 통계">⏱️ 작업시간</button>
+                <button onclick="openEcholineModal()" style="padding:5px 9px; border:none; border-left:1px solid rgba(107,63,200,0.4); background:#00695c; color:white; font-weight:600; cursor:pointer; font-size:12px; white-space:nowrap;" title="월별 완료건 에코라인 일괄등록 / 메일 검색">📋 에코라인등록</button>
             </div>
 
             <span id="syncStatus" style="font-size:11px; color:var(--green); white-space:nowrap; display:none;">☁️ 자동 저장됨</span>
