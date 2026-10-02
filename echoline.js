@@ -192,7 +192,7 @@
 
     function renderList() {
         const [y, m] = String($('ecoYm').value || '').split('-').map(Number);
-        const done = allTasks().filter(t => t.status === '완료');
+        const done = allTasks().filter(t => t.status === 'done' || t.status === '완료');   // 앱은 'done' 으로 저장(화면 표시만 '완료')
         const inMonth = done.filter(t => { const e = pd(t.aEnd); return e && e.getFullYear() === y && e.getMonth() + 1 === m; })
             .sort((a, b) => (pd(a.aEnd) - pd(b.aEnd)));
         const targets = inMonth.filter(t => t.reqType !== '에코라인');
