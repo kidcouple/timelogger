@@ -12,9 +12,17 @@
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const allTasks = () => (typeof tasks !== 'undefined' && Array.isArray(tasks)) ? tasks : [];
 
+    // 고객사별 코드가 없을 때 쓰는 기본값 (CO 모듈 대상). 소분류 CO-06(기타), 서비스유형 ES/ES-01. 설정 화면에서 변경 가능.
+    const DEFAULT_CODES = { saL: 'ERP', saM: 'CO', saS: 'CO-06', stL: 'ES', stM: 'ES-01' };
+    const DEFAULT_OWNER = 'skhwang';   // Echoline 담당자 ID 기본값 (설정에서 변경 가능)
+    const DEFAULT_FIELDS = [['saL', '영역대'], ['saM', '영역중'], ['saS', '영역소(기타)'], ['stL', '유형대'], ['stM', '유형중']];
     function loadCfg() {
-        try { return Object.assign({ gmailAccount: '', myEchoId: '', clients: {} }, JSON.parse(localStorage.getItem(CFG_KEY) || '{}')); }
-        catch (e) { return { gmailAccount: '', myEchoId: '', clients: {} }; }
+        let saved = {};
+        try { saved = JSON.parse(localStorage.getItem(CFG_KEY) || '{}'); } catch (e) { saved = {}; }
+        const cfg = Object.assign({ gmailAccount: '', myEchoId: '', clients: {} }, saved);
+        if (!cfg.myEchoId) cfg.myEchoId = DEFAULT_OWNER;
+        cfg.defaults = Object.assign({}, DEFAULT_CODES, saved.defaults || {});
+        return cfg;
     }
     function saveCfg(cfg) { localStorage.setItem(CFG_KEY, JSON.stringify(cfg)); }
 
@@ -253,6 +261,10 @@
                 <label>회사 Gmail 주소 <input id="ecoAcct" class="eco-in" style="width:260px" value="${esc(cfg.gmailAccount)}" placeholder="name@company.com 또는 1"></label>
                 <label>내 Echoline 담당자 ID <input id="ecoMyId" class="eco-in" style="width:120px" value="${esc(cfg.myEchoId)}"></label>
             </div>
+            <div class="eco-row" style="margin-bottom:8px">
+                <span>기본 코드 (고객사별 값이 없을 때)</span>
+                ${DEFAULT_FIELDS.map(([k, n]) => `<label class="eco-note">${n} <input class="eco-in" data-def="${k}" style="width:80px" value="${esc(cfg.defaults[k])}"></label>`).join('')}
+            </div>
             <div class="eco-row" style="margin-bottom:10px">
                 <span>템플릿: ${tpl ? '✅ 등록됨' : '❌ 없음'}</span>
                 <input type="file" id="ecoTplFile" accept=".xlsx">
@@ -279,6 +291,8 @@
             const next = loadCfg();
             next.gmailAccount = $('ecoAcct').value.trim();
             next.myEchoId = $('ecoMyId').value.trim();
+            next.defaults = {};
+            document.querySelectorAll('#ecoCfg input[data-def]').forEach(inp => { next.defaults[inp.dataset.def] = inp.value.trim(); });
             document.querySelectorAll('#ecoCfg tr[data-name]').forEach(tr => {
                 const c = {};
                 tr.querySelectorAll('[data-f]').forEach(inp => {
@@ -319,7 +333,8 @@
         grid = {
             ym: $('ecoYm').value, dirty: false,
             rows: current.map(t => {
-                const c = cfg.clients[String(t.client || '').trim()] || {};
+                const c = Object.assign({}, cfg.defaults, ...Object.entries(cfg.clients[String(t.client || '').trim()] || {})
+                    .filter(([, v]) => v).map(([k, v]) => ({ [k]: v })));   // 고객사 값 > 기본값
                 const mins = taskMinutes(t);
                 return {
                     client: String(t.client || '').trim(), seq: t.seq, on: true,
@@ -405,7 +420,8 @@
     function saveCodesAsDefaults() {
         const cfg = loadCfg();
         grid.rows.filter(r => r.on && r.client).forEach(r => {
-            SHEET_COLS.filter(col => col.code && r.v[col.k]).forEach(col => {
+            // 기본값과 같은 값은 고객사에 고정하지 않음 → 나중에 기본값을 바꾸면 그대로 반영
+            SHEET_COLS.filter(col => col.code && r.v[col.k] && r.v[col.k] !== cfg.defaults[col.k]).forEach(col => {
                 const c = cfg.clients[r.client] || (cfg.clients[r.client] = {});
                 if (!c[col.k]) c[col.k] = r.v[col.k];
             });
