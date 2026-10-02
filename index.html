@@ -11,6 +11,7 @@
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/ko.js"></script>
     <script src="supabaseClient.js"></script>
+    <script src="weeklyReportExcel.js"></script>
 
     <!-- PWA & Mobile Meta -->
     <link rel="manifest" href="manifest.json?v=9">
@@ -2538,6 +2539,14 @@
             try {
                 await save();
                 const user = supabaseAPI.currentUser || "황선균";
+
+                // GitHub Pages 등 백엔드가 없는 환경: 브라우저에서 직접 엑셀 생성
+                if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
+                    const fileName = await generateWeeklyReportExcel(tasks, user);
+                    await TL_Alert(`✅ 주간보고 엑셀(<b>${fileName}</b>)이 생성되어 다운로드 폴더에 저장되었습니다.<br><br>브라우저의 <b>다운로드 목록</b>에서 파일을 열어주세요!`);
+                    return;
+                }
+
                 const response = await fetch(`/api/weekly-report?action=open&user=${encodeURIComponent(user)}`);
                 const result = await response.json();
 
