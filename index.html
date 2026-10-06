@@ -13,6 +13,7 @@
     <script src="supabaseClient.js"></script>
     <script src="weeklyReportExcel.js"></script>
     <script src="echoline.js"></script>
+    <script src="mailFollowups.js"></script>
 
     <!-- PWA & Mobile Meta -->
     <link rel="manifest" href="manifest.json?v=9">
@@ -2175,7 +2176,7 @@
             }
 
             try {
-                const response = await fetch('/api/notion/create', {
+                const response = await tlApiFetch('/api/notion/create', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ title, client, reqDate, reqDetail, procDetail })
@@ -2224,11 +2225,11 @@
                 const targetTask = tasks.find(x => (String(x.id) === String(id) || String(x.seq) === String(id)));
                 if (targetTask && targetTask.notionlink) {
                     try {
-                        fetch('/api/notion/delete', {
+                        tlApiFetch('/api/notion/delete', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ url: targetTask.notionlink })
-                        }); // 비동기로 태우고 대기하지 않음 (사용자 경험 향상)
+                        }).catch(e => console.error(e)); // 비동기로 태우고 대기하지 않음 (사용자 경험 향상)
                     } catch (e) { console.error(e); }
                 }
 
@@ -2282,7 +2283,7 @@
                 }
             } catch (e) {
                 console.error('DB load failed:', e);
-                if (force) alert('DB에서 데이터를 불러오지 못했습니다.\n' + e.message);
+                if (force && !e.needLogin) alert('DB에서 데이터를 불러오지 못했습니다.\n' + e.message);
                 render();
             }
         }
@@ -2549,7 +2550,7 @@
                     return;
                 }
 
-                const response = await fetch(`/api/weekly-report?action=open&user=${encodeURIComponent(user)}`);
+                const response = await tlApiFetch(`/api/weekly-report?action=open&user=${encodeURIComponent(user)}`);
                 const result = await response.json();
 
                 if (result.status === 'success') {
@@ -2557,15 +2558,11 @@
                     // 따라서 클라이언트 측에서 자동으로 다운로드를 트리거합니다.
                     const downloadUrl = `/api/weekly-report/download?path=${encodeURIComponent(result.file)}`;
                     
-                    const a = document.createElement('a');
-                    a.style.display = 'none';
-                    a.href = downloadUrl;
-                    a.download = ''; // 브라우저가 제공된 이름으로 다운로드하도록 지시
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
+                    // 서버가 로그인 토큰을 요구하므로 링크 대신 받아서 저장
+                    window._tlLastReportUrl = downloadUrl;
+                    await tlApiDownload(downloadUrl);
 
-                    await TL_Alert(`✅ 주간보고 엑셀이 생성되어 다운로드 폴더에 저장되었습니다.<br><br>브라우저 상단(또는 하단)의 <b>다운로드 완료 목록</b>에서 파일을 클릭하여 바로 엑셀을 열어주세요!<br><br><span style="font-size:12px;color:gray;">만약 다운로드가 자동으로 시작되지 않았다면 <a href="${downloadUrl}" target="_blank" style="color:#005fb8; font-weight:bold; text-decoration:underline;">[수동 다운로드]</a>를 클릭하세요.</span>`);
+                    await TL_Alert(`✅ 주간보고 엑셀이 생성되어 다운로드 폴더에 저장되었습니다.<br><br>브라우저 상단(또는 하단)의 <b>다운로드 완료 목록</b>에서 파일을 클릭하여 바로 엑셀을 열어주세요!<br><br><span style="font-size:12px;color:gray;">만약 다운로드가 자동으로 시작되지 않았다면 <a href="#" onclick="tlApiDownload(window._tlLastReportUrl).catch(e => alert(e.message)); return false;" style="color:#005fb8; font-weight:bold; text-decoration:underline;">[수동 다운로드]</a>를 클릭하세요.</span>`);
                 } else {
                     throw new Error(result.error || '알 수 없는 오류');
                 }
@@ -2592,12 +2589,13 @@
             try {
                 if (action !== 'send') await save();
                 const user = supabaseAPI.currentUser || "황선균";
-                const response = await fetch(`/api/weekly-report?action=${action}&user=${encodeURIComponent(user)}`);
+                const response = await tlApiFetch(`/api/weekly-report?action=${action}&user=${encodeURIComponent(user)}`);
                 const result = await response.json();
 
                 if (result.status === 'success') {
                     if (action === 'open') {
-                        await TL_Alert(`✅ 엑셀 생성 성공!<br><br>📂 <b>아래 링크를 클릭하여 파일을 다운로드 받으실 수 있습니다:</b><br><a href="/api/weekly-report/download?path=${encodeURIComponent(result.file)}" target="_blank" style="display:inline-block; margin-top:8px; color:#005fb8; font-weight:bold; text-decoration:underline;">[📥 주간업무보고서 다운로드]</a><br><br>- 내용 수정 후 저장하신 뒤 [수정 완료 후 메일 발송] 버튼을 눌러주세요.`);
+                        window._tlLastReportUrl = `/api/weekly-report/download?path=${encodeURIComponent(result.file)}`;
+                        await TL_Alert(`✅ 엑셀 생성 성공!<br><br>📂 <b>아래 링크를 클릭하여 파일을 다운로드 받으실 수 있습니다:</b><br><a href="#" onclick="tlApiDownload(window._tlLastReportUrl).catch(e => alert(e.message)); return false;" style="display:inline-block; margin-top:8px; color:#005fb8; font-weight:bold; text-decoration:underline;">[📥 주간업무보고서 다운로드]</a><br><br>- 내용 수정 후 저장하신 뒤 [수정 완료 후 메일 발송] 버튼을 눌러주세요.`);
                     } else {
                         await TL_Alert(`✅ 보고서 발송 성공!\n엑셀: ${result.file}\n메일 결과: ${result.email}`);
                         closeWeeklyReportPreview();

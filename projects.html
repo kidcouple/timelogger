@@ -614,7 +614,7 @@
                 if (force) await TL_Alert('동기화 완료');
             } catch (e) {
                 console.error(e);
-                if (force) alert('DB에서 데이터를 불러오지 못했습니다.\n' + (e.message || String(e)));
+                if (force && !e.needLogin) alert('DB에서 데이터를 불러오지 못했습니다.\n' + (e.message || String(e)));
                 renderList();
             }
         }

@@ -60,11 +60,12 @@ def _creds():
     return url, key
 
 
-def _headers(extra=None):
+def _headers(extra=None, token=None):
+    """token: 브라우저에서 받은 사용자 로그인 토큰. 표는 RLS 로 로그인한 본인만 접근 가능."""
     _, key = _creds()
     headers = {
         "apikey": key,
-        "Authorization": f"Bearer {key}",
+        "Authorization": f"Bearer {token or key}",
         "Accept": "application/json",
     }
     if extra:
@@ -72,7 +73,7 @@ def _headers(extra=None):
     return headers
 
 
-def _request(method, path, *, params=None, json_body=None, extra_headers=None, timeout=45):
+def _request(method, path, *, params=None, json_body=None, extra_headers=None, timeout=45, token=None):
     url, _ = _creds()
     last_err = None
     for attempt in range(4):
@@ -80,7 +81,7 @@ def _request(method, path, *, params=None, json_body=None, extra_headers=None, t
             resp = requests.request(
                 method,
                 f"{url}{path}",
-                headers=_headers(extra_headers),
+                headers=_headers(extra_headers, token),
                 params=params,
                 json=json_body,
                 timeout=timeout,
@@ -169,7 +170,7 @@ def _eq_params(spec, username=None, filters=None):
     return params
 
 
-def select(table, username=None, filters=None):
+def select(table, username=None, filters=None, token=None):
     if table not in TABLES:
         raise ValueError(f"unknown table: {table}")
     spec = TABLES[table]
@@ -178,7 +179,7 @@ def select(table, username=None, filters=None):
     offset = 0
     while True:
         extra = {"Range": f"{offset}-{offset + PAGE - 1}", "Prefer": "count=exact"}
-        resp = _request("GET", f"/rest/v1/{table}", params=params, extra_headers=extra)
+        resp = _request("GET", f"/rest/v1/{table}", params=params, extra_headers=extra, token=token)
         if resp.status_code not in (200, 206):
             raise RuntimeError(f"{table} GET HTTP {resp.status_code} {(resp.text or '')[:240]}")
         chunk = resp.json() if resp.content else []
@@ -193,7 +194,7 @@ def select(table, username=None, filters=None):
     return rows
 
 
-def upsert(table, data, username=None):
+def upsert(table, data, username=None, token=None):
     if table not in TABLES:
         raise ValueError(f"unknown table: {table}")
     rows = data if isinstance(data, list) else [data]
@@ -206,13 +207,13 @@ def upsert(table, data, username=None):
     }
     for i in range(0, len(normalized), UPSERT_CHUNK):
         chunk = normalized[i:i + UPSERT_CHUNK]
-        resp = _request("POST", f"/rest/v1/{table}", json_body=chunk, extra_headers=extra)
+        resp = _request("POST", f"/rest/v1/{table}", json_body=chunk, extra_headers=extra, token=token)
         if resp.status_code not in (200, 201, 204):
             raise RuntimeError(f"{table} UPSERT HTTP {resp.status_code} {(resp.text or '')[:240]}")
     return len(normalized)
 
 
-def delete(table, filters, username=None):
+def delete(table, filters, username=None, token=None):
     if table not in TABLES:
         raise ValueError(f"unknown table: {table}")
     spec = TABLES[table]
@@ -225,6 +226,7 @@ def delete(table, filters, username=None):
         f"/rest/v1/{table}",
         params=params,
         extra_headers={"Prefer": "return=minimal"},
+        token=token,
     )
     if resp.status_code not in (200, 204):
         raise RuntimeError(f"{table} DELETE HTTP {resp.status_code} {(resp.text or '')[:240]}")
