@@ -55,13 +55,12 @@ def bridge_config():
 
 
 def creds():
-    load_env_file(os.path.join(MAIL_DIR, ".env"))
-    url = (os.environ.get("SUPABASE_URL") or "").strip().rstrip("/")
-    key = (os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_KEY") or "").strip()
+    # 회신 목록을 올리는 supabase_bridge.py 와 같은 프로젝트를 봐야 하므로 그 설정을 먼저 쓴다.
+    url, key = bridge_config()
     if not url or not key:
-        bridge_url, bridge_key = bridge_config()
-        url = url or bridge_url
-        key = key or bridge_key
+        load_env_file(os.path.join(MAIL_DIR, ".env"))
+        url = url or (os.environ.get("SUPABASE_URL") or "").strip().rstrip("/")
+        key = key or (os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_KEY") or "").strip()
     if not url or not key:
         sys.exit(
             "SUPABASE_URL 과 SUPABASE_SERVICE_ROLE_KEY 가 필요합니다. "
@@ -138,6 +137,12 @@ def run_sync():
 def main():
     url, key = creds()
     print(f"mail sync watch: {MAIL_DIR}", flush=True)
+    print(f"supabase: {url}", flush=True)
+    try:
+        pending = request("GET", f"{url}/rest/v1/mail_sync_requests?status=eq.pending&select=id", key)
+        print(f"대기 중인 요청 {len(pending)}건 — 이제 Time Logger 에서 🔄 를 누르세요.", flush=True)
+    except Exception as e:
+        print(f"mail_sync_requests 표를 읽지 못했습니다 (다른 프로젝트이거나 키 문제): {e}", flush=True)
     while True:
         try:
             row_id = claim(url, key)
