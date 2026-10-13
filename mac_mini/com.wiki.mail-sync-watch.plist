@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Time Logger 메일 카드 🔄 요청 감시 (mail_sync_watch.py). 로그인하면 켜지고, 죽으면 다시 켜진다.
+  설치:
+    cd /Users/sunkyunhwang/Masking/wiki-tools/mail
+    curl -fsSLO https://raw.githubusercontent.com/kidcouple/timelogger/github-main/mac_mini/mail_sync_watch.py
+    curl -fsSL -o ~/Library/LaunchAgents/com.wiki.mail-sync-watch.plist https://raw.githubusercontent.com/kidcouple/timelogger/github-main/mac_mini/com.wiki.mail-sync-watch.plist
+    launchctl load ~/Library/LaunchAgents/com.wiki.mail-sync-watch.plist
+  상태 확인: launchctl list | grep mail-sync     로그: tail -f /Users/sunkyunhwang/Masking/wiki-tools/mail/mail_sync_watch.log
+  다시 켜기: launchctl kickstart -k gui/$(id -u)/com.wiki.mail-sync-watch
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.wiki.mail-sync-watch</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>-u</string>
+    <string>/Users/sunkyunhwang/Masking/wiki-tools/mail/mail_sync_watch.py</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/sunkyunhwang/Masking/wiki-tools/mail</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>MAIL_BRIDGE_DIR</key>
+    <string>/Users/sunkyunhwang/Masking/wiki-tools/mail</string>
+    <key>PATH</key>
+    <string>/Users/sunkyunhwang/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>LANG</key>
+    <string>ko_KR.UTF-8</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+  <key>StandardOutPath</key>
+  <string>/Users/sunkyunhwang/Masking/wiki-tools/mail/mail_sync_watch.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/sunkyunhwang/Masking/wiki-tools/mail/mail_sync_watch.log</string>
+</dict>
+</plist>
