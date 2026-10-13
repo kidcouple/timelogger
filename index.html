@@ -13,7 +13,7 @@
     <script src="supabaseClient.js"></script>
     <script src="weeklyReportExcel.js"></script>
     <script src="echoline.js"></script>
-    <script src="mailFollowups.js"></script>
+    <script src="mailFollowups.js?v=35"></script>
 
     <!-- PWA & Mobile Meta -->
     <link rel="manifest" href="manifest.json?v=9">
@@ -2278,9 +2278,7 @@
                 }
 
                 render();
-                if (force) {
-                    await TL_Alert('최신 데이터를 정상적으로 불러왔습니다.');
-                }
+                if (force) await TL_Alert('최신 데이터를 정상적으로 불러왔습니다.');
             } catch (e) {
                 console.error('DB load failed:', e);
                 if (force && !e.needLogin) alert('DB에서 데이터를 불러오지 못했습니다.\n' + e.message);
@@ -2613,7 +2611,7 @@
         }
 
 
-        refreshData();
+        document.addEventListener('DOMContentLoaded', () => refreshData());
     </script>
 
 

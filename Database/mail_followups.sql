@@ -7,7 +7,7 @@
 
 create table if not exists public.mail_followups (
   key text primary key,
-  kind text not null check (kind in ('A','A2','B')),
+  kind text not null check (kind in ('A','A2','G','B')),
   date date,
   age int,
   client text,
