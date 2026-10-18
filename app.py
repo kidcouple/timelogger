@@ -8,7 +8,6 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
-import threading
 from flask import Flask, request, send_from_directory, jsonify
 from google.cloud import storage
 import openpyxl
@@ -56,28 +55,55 @@ def download_from_gcs():
     except: pass
 
 
-KEEPALIVE_INTERVAL_SEC = int(os.environ.get("KEEPALIVE_INTERVAL_SEC", "600"))
-
-
-def _keepalive_loop():
-    while True:
-        time.sleep(max(60, KEEPALIVE_INTERVAL_SEC))
-        try:
-            local_db.heartbeat()
-            logger.info("db keepalive ok")
-        except Exception as e:
-            logger.warning("db keepalive failed: %s", e)
-
-
-def start_keepalive_thread():
-    t = threading.Thread(target=_keepalive_loop, name="db-keepalive", daemon=True)
-    t.start()
-
-
 def get_root_path(): return os.path.dirname(os.path.abspath(__file__))
 
 
-start_keepalive_thread()
+# Supabase 표는 RLS 로 '로그인한 본인'만 접근 가능 → 서버에는 DB 권한이 없고, 브라우저의 로그인 토큰으로만 읽는다.
+# (공개 키만 가진 keepalive 스레드는 더 이상 DB 에 쓸 수 없어 끔. DB 활동은 맥미니 브리지가 2분마다 유지)
+
+_TOKEN_CACHE = {}  # token -> 확인 만료 시각
+
+
+def _bearer():
+    h = request.headers.get("Authorization") or ""
+    return h[7:].strip() if h.lower().startswith("bearer ") else ""
+
+
+def _token_ok(token):
+    """Supabase Auth 에 토큰이 유효한지 확인 (5분 캐시)"""
+    if not token:
+        return False
+    now = time.time()
+    if _TOKEN_CACHE.get(token, 0) > now:
+        return True
+    url = (os.environ.get("SUPABASE_URL") or "").strip().rstrip("/")
+    key = (os.environ.get("SUPABASE_ANON_KEY") or "").strip()
+    if not url or not key:
+        logger.error("SUPABASE_URL / SUPABASE_ANON_KEY 가 없어 로그인 확인 불가")
+        return False
+    try:
+        r = requests.get(f"{url}/auth/v1/user", headers={"apikey": key, "Authorization": f"Bearer {token}"}, timeout=10)
+    except requests.RequestException as e:
+        logger.warning("token check failed: %s", e)
+        return False
+    if r.status_code != 200:
+        return False
+    if len(_TOKEN_CACHE) > 100:
+        _TOKEN_CACHE.clear()
+    _TOKEN_CACHE[token] = now + 300
+    return True
+
+
+def require_login(fn):
+    """/api/* 는 Time Logger 에 로그인한 토큰이 있어야 실행 (다른 웹페이지·같은 네트워크 기기에서 못 부르게)"""
+    from functools import wraps
+
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if not _token_ok(_bearer()):
+            return jsonify({"status": "error", "error": "login required", "message": "로그인이 필요합니다."}), 401
+        return fn(*args, **kwargs)
+    return wrapper
 
 @app.route('/')
 @app.route('/index.html')
@@ -96,51 +122,17 @@ def api_public_config():
 
 
 @app.route("/api/health")
-@app.route("/api/keepalive")
-def api_keepalive():
-    try:
-        local_db.heartbeat()
-        return jsonify({"status": "ok", "db": "supabase"})
-    except Exception as e:
-        logger.warning("keepalive failed: %s", e)
-        return jsonify({"status": "error", "error": str(e)}), 503
+def api_health():
+    return jsonify({"status": "ok"})
 
 
-def _request_username():
-    return (
-        (request.headers.get("X-User-Name") or request.args.get("username") or "").strip()
-        or "황선균"
-    )
-
-
-@app.route("/api/db/<table>", methods=["GET", "POST", "DELETE"])
-def api_db(table):
-    if table not in local_db.TABLES:
-        return jsonify({"error": "unknown table"}), 404
-    username = _request_username()
-    try:
-        if request.method == "GET":
-            return jsonify(local_db.select(table, username=username))
-        if request.method == "POST":
-            payload = request.get_json(silent=True)
-            if payload is None:
-                return jsonify({"error": "JSON body required"}), 400
-            local_db.upsert(table, payload, username=username)
-            return ("", 204)
-        filters = {k: v for k, v in request.args.items() if k.lower() != "username"}
-        if not filters:
-            return jsonify({"error": "delete filter required"}), 400
-        local_db.delete(table, filters, username=username)
-        return ("", 204)
-    except Exception as e:
-        logger.exception("api_db %s %s", request.method, table)
-        return jsonify({"error": str(e)}), 500
+# (/api/db 프록시는 없앰: 브라우저가 로그인 토큰으로 Supabase 에 직접 접속)
 
 
 def fetch_table(table, username):
-    """Supabase 조회. 주간보고 등 서버 로직용."""
+    """Supabase 조회 (요청한 사용자의 로그인 토큰으로). 주간보고 등 서버 로직용."""
     try:
-        return local_db.select(table, username=username)
+        return local_db.select(table, username=username, token=_bearer())
     except Exception as e:
         logger.warning("fetch_table %s error: %s", table, e)
         return []
@@ -198,6 +190,7 @@ def interval_overlaps_week(ps_date, pe_date, w_start, w_end):
 import glob
 
 @app.route('/api/csv-backups')
+@require_login
 def list_csv_backups():
     try:
         home = os.path.expanduser('~')
@@ -223,6 +216,7 @@ def list_csv_backups():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/csv-backups/read')
+@require_login
 def read_csv_backup():
     path = request.args.get('path')
     if not path:
@@ -242,6 +236,7 @@ def read_csv_backup():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 @app.route('/api/weekly-report/download')
+@require_login
 def download_weekly_report():
     file_path = request.args.get('path')
     if not file_path:
@@ -263,6 +258,7 @@ def download_weekly_report():
     return send_file(file_path, as_attachment=True)
 
 @app.route('/api/weekly-report', methods=['GET', 'POST'])
+@require_login
 def generate_weekly_report():
     secret = request.args.get("secret") or request.headers.get("X-Report-Secret")
     user = request.args.get("user", "황선균") # Default for legacy
@@ -566,7 +562,7 @@ def generate_weekly_report():
                 'username': user,
                 'content_json': {'cur_count': len(cur_week_results), 'next_count': len(next_week_plans), 'issue_count': len(issue_tasks)}
             }
-            local_db.upsert('weekly_reports', report_data, username=user)
+            local_db.upsert('weekly_reports', report_data, username=user, token=_bearer())
 
             if action == 'open':
                 try:
@@ -629,6 +625,7 @@ def generate_weekly_report():
 NOTION_SCHEMA_CACHE = {}
 
 @app.route('/api/notion/create', methods=['POST'])
+@require_login
 def create_notion_page():
     data = request.json or {}
     title = data.get('title', '제목 없는 업무')
@@ -708,6 +705,7 @@ def extract_notion_page_id(url):
     return None
 
 @app.route('/api/notion/delete', methods=['POST'])
+@require_login
 def delete_notion_page():
     data = request.json or {}
     url = data.get('url')
@@ -735,10 +733,20 @@ def delete_notion_page():
 def handle_exception(e):
     return jsonify({"status": "error", "message": f"서버 내부 에러(Python): {str(e)}"}), 500
 
+# 화면에 필요한 파일만 내준다 (.env·DB·소스·.git 등은 절대 안 나가게 허용 목록 방식)
+STATIC_FILES = {
+    'supabaseClient.js', 'weeklyReportExcel.js', 'echoline.js', 'mailFollowups.js', 'service-worker.js',
+    'public-config.json', 'manifest.json', 'report_template.xlsx',
+    'icon-192.png', 'icon-512.png', 'apple-touch-icon.png',
+}
+
+
 @app.route('/<path:filename>')
 def serve_static(filename):
-    try: return send_from_directory(get_root_path(), filename)
-    except: return jsonify({"error": "File not found"}), 404
+    if filename not in STATIC_FILES:
+        return jsonify({"error": "File not found"}), 404
+    return send_from_directory(get_root_path(), filename)
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
+    # 로컬 실행은 이 컴퓨터에서만 접속 (같은 와이파이의 다른 기기 차단). 컨테이너는 gunicorn 이 0.0.0.0 으로 띄움
+    app.run(host=os.environ.get('HOST', '127.0.0.1'), port=int(os.environ.get('PORT', 8080)))

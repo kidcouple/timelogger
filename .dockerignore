@@ -24,3 +24,12 @@ timelogger.db-journal
 scratch*.js
 test_*.py
 delete_*.py
+
+# Google Drive가 만드는 UTF-16 desktop.ini 등 → 'Container import failed' 원인
+**/desktop.ini
+**/__pycache__
+**/*.pyc
+.claude
+mac_mini
+업로드_예시.xlsx
+~$*

@@ -1,0 +1,20 @@
+# 공개 저장소: 비밀·개인 데이터는 절대 올리지 않는다
+.env
+.env.*
+!.env.template
+*.db
+*.db-journal
+*.sqlite
+*.log
+*.csv
+*.xlsx
+!report_template.xlsx
+
+# 로컬 작업 파일
+Archive/
+Documents/
+scratch*.js
+__pycache__/
+*.pyc
+.vscode/
+.DS_Store
