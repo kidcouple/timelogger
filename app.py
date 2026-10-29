@@ -114,6 +114,8 @@ def timer(): return send_from_directory(get_root_path(), 'timer.html')
 def clients_page(): return send_from_directory(get_root_path(), 'clients.html')
 @app.route('/projects.html')
 def projects_page(): return send_from_directory(get_root_path(), 'projects.html')
+@app.route('/review.html')
+def review_page(): return send_from_directory(get_root_path(), 'review.html')
 
 
 @app.route("/api/public-config")
@@ -174,6 +176,41 @@ def format_task_date(d):
     if not d:
         return ""
     return d.strftime("%Y. %m. %d")
+
+
+def logged_task_ids(logs, w_start, w_end):
+    """주간 [w_start,w_end] 에 시작한 기록(logs, 타이머·확인된 제안)이 있는 할일 id."""
+    ids = set()
+    for l in logs or []:
+        if not isinstance(l, dict):
+            continue
+        tid = str(l.get('taskid') or l.get('taskId') or '')
+        d = parse_task_date(l.get('start'))
+        try:
+            dur = float(l.get('duration') or 0)
+        except (TypeError, ValueError):
+            dur = 0
+        if tid and d and dur > 0 and w_start <= d <= w_end:
+            ids.add(tid)
+    return ids
+
+
+def unassigned_confirmed_minutes(sugs, w_start, w_end):
+    """확인됐지만 할일이 없는 제안 시간(분) — 주간보고에 넣지 않고 경고 한 줄로만."""
+    total = 0
+    for s in sugs or []:
+        if not isinstance(s, dict) or s.get('status') != 'confirmed' or (s.get('taskid') or s.get('taskId')):
+            continue
+        d = parse_task_date(s.get('day'))
+        if not d or not (w_start <= d <= w_end):
+            continue
+        try:
+            a = datetime.datetime.fromisoformat(str(s.get('start')).replace('Z', '+00:00'))
+            b = datetime.datetime.fromisoformat(str(s.get('end')).replace('Z', '+00:00'))
+            total += max(0, round((b - a).total_seconds() / 60))
+        except (TypeError, ValueError):
+            continue
+    return total
 
 
 def interval_overlaps_week(ps_date, pe_date, w_start, w_end):
@@ -292,6 +329,9 @@ def generate_weekly_report():
             task_map = {t['id']: t for t in tasks if isinstance(t, dict) and t.get('id')}
 
             logs = fetch_table('logs', user)
+            # 자동 제안 1차: 그 주에 '확인된 기록(logs)'이 있는 할일도 금주 실적. 미배정 확인 시간은 경고용 합계만.
+            logged_ids = logged_task_ids(logs, start_date, end_date)
+            unassigned_min = unassigned_confirmed_minutes(fetch_table('time_suggestions', user), start_date, end_date)
             
             cur_week_results = []
             next_week_plans = []
@@ -330,7 +370,7 @@ def generate_weekly_report():
                 worked_this_week = (
                     actual_time > 0 and work_date is not None
                     and start_date <= work_date <= end_date
-                )
+                ) or str(t.get('id') or '') in logged_ids
                 in_cur = is_open_project or worked_this_week
 
                 if in_cur:
@@ -560,7 +600,8 @@ def generate_weekly_report():
                 'report_date': today.strftime('%Y. %m. %d'), 
                 'week_label': week_label, 
                 'username': user,
-                'content_json': {'cur_count': len(cur_week_results), 'next_count': len(next_week_plans), 'issue_count': len(issue_tasks)}
+                'content_json': {'cur_count': len(cur_week_results), 'next_count': len(next_week_plans), 'issue_count': len(issue_tasks),
+                                 'unassigned_min': unassigned_min}
             }
             local_db.upsert('weekly_reports', report_data, username=user, token=_bearer())
 
@@ -578,10 +619,10 @@ def generate_weekly_report():
                     else:
                         subprocess.run(['xdg-open', output_file])
                         
-                    return jsonify({'status': 'success', 'file': output_file, 'action': 'opened'})
+                    return jsonify({'status': 'success', 'file': output_file, 'action': 'opened', 'unassigned_min': unassigned_min})
                 except Exception as e:
                     logger.warning(f"Failed to open excel: {str(e)}")
-                    return jsonify({'status': 'success', 'file': output_file, 'action': 'opened', 'warning': f'Failed to open locally: {str(e)}'})
+                    return jsonify({'status': 'success', 'file': output_file, 'action': 'opened', 'unassigned_min': unassigned_min, 'warning': f'Failed to open locally: {str(e)}'})
 
 
         if action == 'open':
@@ -735,6 +776,8 @@ def handle_exception(e):
 
 # 화면에 필요한 파일만 내준다 (.env·DB·소스·.git 등은 절대 안 나가게 허용 목록 방식)
 STATIC_FILES = {
+    'suggestLogic.js',
+    'fonts/RIXModernGothic-L.ttf', 'fonts/RIXModernGothic-M.ttf', 'fonts/RIXModernGothic-B.ttf', 'fonts/RIXModernGothic-EB.ttf',
     'supabaseClient.js', 'weeklyReportExcel.js', 'echoline.js', 'mailFollowups.js', 'service-worker.js',
     'public-config.json', 'manifest.json', 'report_template.xlsx',
     'icon-192.png', 'icon-512.png', 'apple-touch-icon.png',

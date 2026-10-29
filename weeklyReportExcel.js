@@ -49,7 +49,7 @@
         return (p && p !== '"' && p !== '""') ? ['프로젝트', 2] : ['고객 운영', 1];
     }
 
-    function buildReportData(tasks) {
+    function buildReportData(tasks, logs) {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const endDate = addDays(today, -((pyWeekday(today) - 3 + 7) % 7)); // 목요일
@@ -59,6 +59,8 @@
         const weekLabel = `${endDate.getMonth() + 1}월 ${Math.floor((endDate.getDate() - 1) / 7) + 1}주차`;
 
         const cur = [], next = [], issues = [];
+        // 자동 제안 1차: 그 주에 확인된 기록(logs)이 있는 할일도 금주 실적
+        const loggedIds = (typeof TL_Suggest !== 'undefined' && logs) ? TL_Suggest.taskIdsWithLogs(logs, startDate, endDate) : new Set();
         const seenNext = new Set();
 
         for (const t of tasks || []) {
@@ -73,7 +75,7 @@
 
             const actualTime = parseFloat(t.actualTime ?? t.actualtime ?? 0) || 0;
             const workDate = asD || aeD || psD;
-            const workedThisWeek = actualTime > 0 && workDate && startDate <= workDate && workDate <= endDate;
+            const workedThisWeek = (actualTime > 0 && workDate && startDate <= workDate && workDate <= endDate) || loggedIds.has(String(t.id));
 
             if (isOpenProject || workedThisWeek) {
                 const item = {
@@ -234,7 +236,7 @@
         });
     }
 
-    async function generateWeeklyReportExcel(tasks, user) {
+    async function generateWeeklyReportExcel(tasks, user, logs) {
         const ExcelJS = await loadExcelJS();
         const resp = await fetch(TEMPLATE_URL, { cache: 'no-store' });
         if (!resp.ok) throw new Error(`엑셀 템플릿(${TEMPLATE_URL})을 불러오지 못했습니다.`);
@@ -242,7 +244,7 @@
         const wb = new ExcelJS.Workbook();
         await wb.xlsx.load(await resp.arrayBuffer());
 
-        const data = buildReportData(tasks);
+        const data = buildReportData(tasks, logs);
         const ws1 = wb.getWorksheet('■CO팀 주요 업무');
         const ws2 = wb.getWorksheet('■ 주요 이슈 및 특이사항');
         if (!ws1 || !ws2) throw new Error('템플릿 시트 이름이 예상과 다릅니다.');

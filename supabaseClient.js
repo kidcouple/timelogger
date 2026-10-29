@@ -7,6 +7,7 @@ const fieldMap = {
     duration: 'duration', client: 'client', project: 'project',
     isissue: 'isIssue', issuememo: 'issueMemo', issueprogress: 'issueProgress', issuefollowup: 'issueFollowUp',
     isurgent: 'isUrgent', isimportant: 'isImportant',
+    clientalias: 'clientAlias', logid: 'logId', updatedat: 'updatedAt',   // time_suggestions
     username: 'userName'
 };
 

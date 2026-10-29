@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🗓 하루 끝 확인 — Tacdore.TimeLogger</title>
+    <script src="supabaseClient.js"></script>
+    <script src="suggestLogic.js"></script>
+    <style>
+        @font-face { font-family:"RIX Modern Gothic"; font-weight:300; font-style:normal; font-display:swap; src:url("fonts/RIXModernGothic-L.ttf") format("truetype"); }
+        @font-face { font-family:"RIX Modern Gothic"; font-weight:400; font-style:normal; font-display:swap; src:url("fonts/RIXModernGothic-M.ttf") format("truetype"); }
+        @font-face { font-family:"RIX Modern Gothic"; font-weight:700; font-style:normal; font-display:swap; src:url("fonts/RIXModernGothic-B.ttf") format("truetype"); }
+        @font-face { font-family:"RIX Modern Gothic"; font-weight:800; font-style:normal; font-display:swap; src:url("fonts/RIXModernGothic-EB.ttf") format("truetype"); }
+        :root { --font:"RIX Modern Gothic","Malgun Gothic","Apple SD Gothic Neo","Segoe UI",sans-serif; }
+
+        :root {
+            --bg: #0a0b0e; --panel: #13171f; --border: #232a35; --primary: #4785ff; --green: #2ea043;
+            --red: #f85149; --orange: #d29922; --text: #f0f6fc; --sub: #8b949e;
+            --px: 1.1px;                         /* 1분 높이 */
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: var(--font); }
+        body { background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; overflow: hidden; font-weight: 400; }
+        header { background: var(--panel); border-bottom: 1px solid var(--border); padding: 10px 18px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; flex-shrink: 0; }
+        header h1 { font-size: 18px; font-weight: 800; }
+        .back { color: var(--sub); text-decoration: none; font-size: 13px; font-weight: 300; }
+        button, select, input { background: #111318; border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 6px 10px; font-size: 13px; }
+        button { cursor: pointer; font-weight: 700; }
+        button.primary { background: var(--primary); border-color: var(--primary); }
+        button.ok { background: var(--green); border-color: var(--green); }
+        button.danger { background: transparent; border-color: var(--red); color: var(--red); }
+        button:disabled { opacity: .5; cursor: default; }
+        #summary { padding: 8px 18px; font-size: 14px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+        #summary b { font-weight: 700; }
+        #summary .warn { color: var(--orange); }
+        main { flex: 1; display: flex; min-height: 0; }
+        #timelineWrap { flex: 1; overflow-y: auto; position: relative; }
+        #timeline { position: relative; margin: 10px 18px 30px 64px; border-left: 1px solid var(--border); }
+        .hour { position: absolute; left: -58px; width: calc(100% + 58px); border-top: 1px solid #1a1f29; font-size: 11px; color: var(--sub); font-weight: 300; }
+        .hour span { position: relative; top: -8px; background: var(--bg); padding-right: 6px; }
+        .work { position: absolute; left: 0; right: 0; background: rgba(71,133,255,.03); }
+        .gap { position: absolute; left: 6px; right: 6px; border: 1px dashed #2b3240; border-radius: 6px; color: var(--sub); font-size: 11px; font-weight: 300; display: flex; align-items: center; justify-content: center; cursor: pointer; opacity: .6; }
+        .gap:hover { opacity: 1; border-color: var(--primary); color: var(--primary); }
+        .blk { position: absolute; left: 6px; right: 6px; border-radius: 6px; padding: 3px 8px; font-size: 12px; overflow: hidden; cursor: pointer; user-select: none; }
+        .blk .t { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .blk .m { font-weight: 300; color: var(--sub); font-size: 11px; }
+        .blk.log { background: rgba(46,160,67,.25); border: 1px solid var(--green); }
+        .blk.suggested { background: rgba(71,133,255,.10); border: 1px dashed var(--primary); }
+        .blk.unassigned { background: rgba(210,153,34,.10); border: 1px dashed var(--orange); }
+        .blk.confirmed { background: rgba(139,148,158,.15); border: 1px solid var(--sub); }
+        .blk.sel { outline: 2px solid #fff; }
+        .h { position: absolute; left: 0; right: 0; height: 7px; cursor: ns-resize; }
+        .h.top { top: 0; } .h.bot { bottom: 0; }
+        aside { width: 340px; border-left: 1px solid var(--border); background: var(--panel); padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+        aside h2 { font-size: 15px; font-weight: 700; }
+        aside label { font-size: 12px; color: var(--sub); font-weight: 300; display: block; margin-bottom: 3px; }
+        aside .row { display: flex; gap: 8px; }
+        aside .row > * { flex: 1; }
+        aside select, aside input { width: 100%; }
+        .hint { font-size: 12px; color: var(--sub); font-weight: 300; line-height: 1.5; }
+        .warnbox { font-size: 12px; color: var(--orange); font-weight: 700; }
+        #discarded div { display: flex; justify-content: space-between; align-items: center; font-size: 12px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+        .testflag { background: var(--orange); color: #000; font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 4px; }
+    </style>
+</head>
+
+<body>
+    <header>
+        <a class="back" href="index.html">← 업무 목록</a>
+        <h1>🗓 하루 끝 확인</h1>
+        <button onclick="moveDay(-1)" title="전날">◀</button>
+        <input type="date" id="day" onchange="setDay(this.value)">
+        <button onclick="moveDay(1)" title="다음날">▶</button>
+        <button onclick="setDay(TL_Suggest.dayOf(new Date()))">오늘</button>
+        <span style="flex:1"></span>
+        <span id="testFlag"></span>
+        <button class="ok" id="btnAll" onclick="confirmAll()">✔ 배정된 제안 모두 확인</button>
+        <button onclick="load()">↻</button>
+    </header>
+    <div id="summary">불러오는 중…</div>
+    <main>
+        <div id="timelineWrap"><div id="timeline"></div></div>
+        <aside id="panel"></aside>
+    </main>
+
+    <script>
+        const S = TL_Suggest;
+        const TEST = new URLSearchParams(location.search).has('test');
+        const VIEW_START = 7 * 60, VIEW_END = 21 * 60;           // 시간표 범위
+        const WORK = JSON.parse(localStorage.getItem('TL_WORK_HOURS') || 'null') || { s: 9 * 60, e: 18 * 60 };   // 근무시간 (기본 09~18)
+        const PX = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--px')) || 1.1;
+        const AREAS = ['개발', '회의', '근무'];
+        const TASK_KEYS = ['id', 'seq', 'title', 'project', 'client', 'requester', 'reqDate', 'pStart', 'pEnd', 'aStart', 'aEnd', 'status', 'reqType', 'actualTime', 'reqDetail', 'procDetail', 'reqImages', 'procImages', 'createdAt', 'isIssue', 'issueMemo', 'issueProgress', 'issueFollowUp', 'notionlink', 'username', 'isUrgent', 'isImportant', 'subtasks'];
+        const SUG_KEYS = ['id', 'day', 'start', 'end', 'area', 'clientAlias', 'prefix', 'source', 'kind', 'taskId', 'status', 'logId', 'createdAt', 'updatedAt'];
+
+        let day = S.dayOf(new Date());
+        let tasks = [], logs = [], sugs = [];
+        let sel = null;                                            // {kind:'sug'|'gap'|'log', id, s, e}
+        let tableMissing = false;
+
+        const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        const hm = m => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+        const parseHm = v => { const m = /^(\d{1,2}):(\d{2})$/.exec(v || ''); return m ? (+m[1]) * 60 + (+m[2]) : null; };
+        const fmtMin = m => { const h = Math.floor(m / 60), r = Math.round(m % 60); return h ? `${h}시간${r ? ' ' + r + '분' : ''}` : `${r}분`; };
+        const pick = (o, keys) => { const r = {}; keys.forEach(k => r[k] = o[k] !== undefined ? o[k] : null); return r; };
+        const taskOf = id => tasks.find(t => String(t.id) === String(id));
+        const taskLabel = t => t ? `${t.client ? '[' + t.client + '] ' : ''}${t.title || '(제목 없음)'}` : '';
+
+        // ---------- 저장소: 실제(Supabase) / 시험(메모리) ----------
+        const store = TEST ? (() => {
+            const d = '2099-01-01';
+            const mk = (id, s, e, extra) => ({ id, day: d, start: S.isoAt(d, s), end: S.isoAt(d, e), area: '개발', source: 'claude', status: 'suggested', ...extra });
+            const db = {
+                tasks: [{ id: 'TA', title: '가짜 할일 A', client: 'C19', status: 'wip', actualTime: 0, aStart: '' },
+                        { id: 'TB', title: '가짜 할일 B', client: 'C01', status: 'todo', actualTime: 30, aStart: '2099. 01. 01' }],
+                logs: [{ sessionId: 'L1', taskId: 'TB', taskTitle: '가짜 할일 B', start: S.isoAt(d, 9 * 60), end: S.isoAt(d, 10 * 60), duration: 60 }],
+                time_suggestions: [mk('s1', 10 * 60, 11 * 60 + 30, { taskId: 'TA', clientAlias: 'C19', prefix: 'ZCOR' }),
+                                   mk('s2', 13 * 60, 14 * 60, { area: '회의', source: 'outlook' }),
+                                   mk('s3', 15 * 60, 16 * 60, { taskId: 'TB' })]
+            };
+            window.__testDB = db;
+            const key = { tasks: 'id', logs: 'sessionId', time_suggestions: 'id' };
+            return {
+                get: async t => JSON.parse(JSON.stringify(db[t])),
+                put: async (t, rows) => { for (const r of [].concat(rows)) { const i = db[t].findIndex(x => x[key[t]] === r[key[t]]); i >= 0 ? db[t][i] = { ...db[t][i], ...r } : db[t].push(r); } },
+                testDay: d
+            };
+        })() : {
+            get: t => supabaseAPI.getTable(t),
+            put: (t, rows) => supabaseAPI.upsert(t, rows)
+        };
+
+        async function load() {
+            try {
+                const [t, l, s] = await Promise.all([store.get('tasks'), store.get('logs'), store.get('time_suggestions').catch(e => { console.warn(e); return null; })]);
+                tasks = t || []; logs = l || [];
+                tableMissing = s === null;
+                sugs = s || [];
+            } catch (e) {
+                if (!e.needLogin) alert('불러오기 실패: ' + e.message);
+            }
+            render();
+        }
+
+        function setDay(d) { day = d; sel = null; document.getElementById('day').value = d; render(); }
+        function moveDay(n) { const d = new Date(`${day}T12:00:00`); d.setDate(d.getDate() + n); setDay(S.dayOf(d)); }
+
+        function render() {
+            const sm = S.summarize(sugs, logs, day);
+            const sumEl = document.getElementById('summary');
+            if (tableMissing) sumEl.innerHTML = '<span class="warn">time_suggestions 표가 아직 없습니다 (Database/time_suggestions.sql 실행 필요)</span>';
+            else {
+                sumEl.innerHTML = `오늘: 확인 <b>${(sm.confirmedMin / 60).toFixed(1)}시간</b> / 제안 남음 <b>${sm.pending}</b> / ` +
+                    `<span class="${sm.unassigned ? 'warn' : ''}">미배정 <b>${sm.unassigned}</b></span>` +
+                    `<span class="hint" style="margin-left:12px">확인하지 않은 제안은 시간으로 치지 않습니다.</span>`;
+            }
+            document.getElementById('btnAll').disabled = S.confirmAllTargets(sugs, day).length === 0;
+            renderTimeline();
+            renderPanel();
+        }
+
+        function y(m) { return (m - VIEW_START) * PX(); }
+
+        function renderTimeline() {
+            const tl = document.getElementById('timeline');
+            tl.style.height = `${(VIEW_END - VIEW_START) * PX()}px`;
+            let h = `<div class="work" style="top:${y(WORK.s)}px;height:${(WORK.e - WORK.s) * PX()}px"></div>`;
+            for (let m = VIEW_START; m <= VIEW_END; m += 60) h += `<div class="hour" style="top:${y(m)}px"><span>${hm(m)}</span></div>`;
+            const bl = S.blocks(sugs, logs, day);
+            for (const g of S.gaps(bl, WORK.s, WORK.e)) {
+                if (g.e - g.s < 10) continue;
+                h += `<div class="gap" style="top:${y(g.s)}px;height:${(g.e - g.s) * PX()}px" onclick="selectGap(${g.s},${g.e})">+ 빈 구간 ${hm(g.s)}~${hm(g.e)} 채우기</div>`;
+            }
+            for (const b of bl) {
+                const t = taskOf(b.taskId);
+                const cls = b.kind === 'log' ? 'log' : b.kind === 'confirmed' ? 'confirmed' : (b.taskId ? 'suggested' : 'unassigned');
+                const title = b.kind === 'log' ? taskLabel(t) || '기록'
+                    : b.taskId ? taskLabel(t) : (b.kind === 'confirmed' ? '확인됨 (미배정 · 주간보고 제외)' : '할일을 고르세요 / 버림');
+                const meta = `${hm(b.s)}~${hm(b.e)} · ${fmtMin(b.e - b.s)}${b.area ? ' · ' + b.area : ''}${b.kind === 'log' ? ' · 기록' : b.kind === 'suggested' ? ' · 제안' : ''}`;
+                const isSel = sel && sel.id === b.id;
+                const handles = b.kind === 'suggested' ? `<div class="h top" data-edge="s"></div><div class="h bot" data-edge="e"></div>` : '';
+                h += `<div class="blk ${cls}${isSel ? ' sel' : ''}" data-id="${esc(b.id)}" data-kind="${b.kind}" style="top:${y(b.s)}px;height:${Math.max(18, (b.e - b.s) * PX())}px">
+                        ${handles}<div class="t">${esc(title)}</div><div class="m">${meta}</div></div>`;
+            }
+            tl.innerHTML = h;
+            tl.querySelectorAll('.blk').forEach(el => {
+                el.addEventListener('click', ev => { if (ev.target.classList.contains('h')) return; selectBlock(el.dataset.kind, el.dataset.id); });
+                el.querySelectorAll('.h').forEach(hd => hd.addEventListener('pointerdown', ev => startDrag(ev, el.dataset.id, hd.dataset.edge)));
+            });
+        }
+
+        // ---------- 끌어서 길이 조정 (15분 단위, Shift 1분) ----------
+        function startDrag(ev, id, edge) {
+            ev.preventDefault(); ev.stopPropagation();
+            const s = sugs.find(x => x.id === id); if (!s) return;
+            const y0 = ev.clientY, m0 = S.minOfDay(edge === 's' ? s.start : s.end, day);
+            const other = S.minOfDay(edge === 's' ? s.end : s.start, day);
+            const el = document.querySelector(`.blk[data-id="${CSS.escape(id)}"]`);
+            let val = m0;
+            const move = e => {
+                val = S.snap(m0 + (e.clientY - y0) / PX(), e.shiftKey);
+                val = edge === 's' ? Math.min(val, other - 1) : Math.max(val, other + 1);
+                val = Math.max(0, Math.min(1440, val));
+                const a = edge === 's' ? val : other, b = edge === 's' ? other : val;
+                el.style.top = `${y(a)}px`; el.style.height = `${Math.max(18, (b - a) * PX())}px`;
+                el.querySelector('.m').textContent = `${hm(a)}~${hm(b)} · ${fmtMin(b - a)}`;
+            };
+            const up = async () => {
+                window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
+                if (val === m0) return;
+                await saveSug({ ...s, [edge === 's' ? 'start' : 'end']: S.isoAt(day, val) });
+                sel = { kind: 'sug', id }; render();
+            };
+            window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+        }
+
+        function selectBlock(kind, id) { sel = { kind: kind === 'log' ? 'log' : 'sug', id }; render(); }
+        function selectGap(s, e) { sel = { kind: 'gap', id: `gap-${s}`, s, e }; render(); }
+
+        function taskOptions(cur) {
+            const open = tasks.filter(t => t.status !== 'done' || String(t.id) === String(cur));
+            open.sort((a, b) => taskLabel(a).localeCompare(taskLabel(b)));
+            return `<option value="">— 미배정 —</option>` + open.map(t => `<option value="${esc(t.id)}"${String(t.id) === String(cur) ? ' selected' : ''}>${esc(taskLabel(t))}</option>`).join('');
+        }
+
+        function renderPanel() {
+            const p = document.getElementById('panel');
+            const discarded = sugs.filter(s => s.day === day && s.status === 'discarded');
+            const disc = discarded.length ? `<h2 style="margin-top:14px">버린 제안 (${discarded.length})</h2><div id="discarded">` +
+                discarded.map(s => `<div><span>${hm(S.minOfDay(s.start, day))}~${hm(S.minOfDay(s.end, day))} · ${esc(s.area)}</span><button onclick="restoreSug('${esc(s.id)}')">되돌리기</button></div>`).join('') + '</div>' : '';
+            if (!sel) {
+                p.innerHTML = `<h2>사용법</h2><div class="hint">· 점선 = 자동 제안, 실선 초록 = 확인된 기록<br>· 블록을 눌러 할일을 고르고 [확인], 아니면 [버림]<br>· 빈 구간을 눌러 기록으로 채우기<br>· 제안 블록 위·아래 끝을 끌면 시간 조정 (15분 단위, Shift = 1분)<br>· 할일이 없는(미배정) 시간은 주간보고에 들어가지 않습니다.</div>${disc}`;
+                return;
+            }
+            if (sel.kind === 'log') {
+                const l = logs.find(x => x.sessionId === sel.id);
+                p.innerHTML = `<h2>확인된 기록</h2><div class="hint">${esc(taskLabel(taskOf(l && l.taskId)))}<br>${l ? hm(S.minOfDay(l.start, day)) + '~' + hm(S.minOfDay(l.end, day)) : ''}<br>기록 수정·삭제는 타이머 화면에서 합니다.</div>${disc}`;
+                return;
+            }
+            if (sel.kind === 'gap') {
+                p.innerHTML = `<h2>빈 구간 채우기</h2>
+                    <div class="row"><div><label>시작</label><input id="fS" type="time" value="${hm(sel.s)}"></div><div><label>끝</label><input id="fE" type="time" value="${hm(sel.e)}"></div></div>
+                    <div><label>할일</label><select id="fTask">${taskOptions('')}</select></div>
+                    <button class="ok" onclick="fillGap()">기록으로 채우기</button>
+                    <button onclick="sel=null;render()">취소</button>${disc}`;
+                return;
+            }
+            const s = sugs.find(x => x.id === sel.id);
+            if (!s) { sel = null; return renderPanel(); }
+            const st = s.status === 'confirmed' ? '확인됨' : '제안';
+            p.innerHTML = `<h2>${st} · ${hm(S.minOfDay(s.start, day))}~${hm(S.minOfDay(s.end, day))}</h2>
+                <div class="hint">출처 ${esc(s.source || '-')}${s.clientAlias ? ' · ' + esc(s.clientAlias) : ''}${s.prefix ? ' · ' + esc(s.prefix) : ''}</div>
+                <div class="row"><div><label>시작</label><input id="fS" type="time" step="60" value="${hm(S.minOfDay(s.start, day))}"></div><div><label>끝</label><input id="fE" type="time" step="60" value="${hm(S.minOfDay(s.end, day))}"></div></div>
+                <div><label>분야</label><select id="fArea">${AREAS.map(a => `<option${a === s.area ? ' selected' : ''}>${a}</option>`).join('')}</select></div>
+                <div><label>할일</label><select id="fTask">${taskOptions(s.taskId)}</select></div>
+                ${!s.taskId ? '<div class="warnbox">할일을 고르지 않으면 주간보고에 들어가지 않습니다.</div>' : ''}
+                <div class="row"><button class="ok" onclick="confirmSel()"${s.status === 'confirmed' ? ' disabled' : ''}>✔ 확인</button>
+                <button onclick="saveSel()">고침 저장</button></div>
+                <button class="danger" onclick="discardSel()">버림</button>${disc}`;
+        }
+
+        function readForm(s) {
+            const a = parseHm(document.getElementById('fS').value), b = parseHm(document.getElementById('fE').value);
+            if (a === null || b === null || b <= a) { alert('시작·끝 시각을 확인하세요.'); return null; }
+            const ar = document.getElementById('fArea');
+            return { ...s, start: S.isoAt(day, a), end: S.isoAt(day, b), area: ar ? ar.value : s.area, taskId: document.getElementById('fTask').value || null };
+        }
+
+        async function saveSug(s) {
+            s.updatedAt = new Date().toISOString();
+            await store.put('time_suggestions', pick(s, SUG_KEYS));
+            const i = sugs.findIndex(x => x.id === s.id); if (i >= 0) sugs[i] = s; else sugs.push(s);
+        }
+        async function saveSel() {
+            const s = readForm(sugs.find(x => x.id === sel.id)); if (!s) return;
+            await saveSug(s); render();
+        }
+        async function doConfirm(s) {
+            const r = S.confirm(s, taskOf(s.taskId));
+            if (r.log) {
+                await store.put('logs', r.log); logs.push(r.log);
+                const tk = pick(r.task, TASK_KEYS);
+                if (Array.isArray(tk.subtasks)) tk.subtasks = JSON.stringify(tk.subtasks);
+                await store.put('tasks', tk);
+                const i = tasks.findIndex(t => String(t.id) === String(r.task.id)); if (i >= 0) tasks[i] = r.task;
+            }
+            await saveSug(r.suggestion);
+        }
+        async function confirmSel() {
+            const s = readForm(sugs.find(x => x.id === sel.id)); if (!s) return;
+            if (!s.taskId && !confirm('할일 없이 확인하면 주간보고에 들어가지 않습니다. 그래도 확인할까요?')) return;
+            await doConfirm(s); sel = null; render();
+        }
+        async function confirmAll() {
+            const list = S.confirmAllTargets(sugs, day);
+            if (!list.length) return;
+            if (!confirm(`할일이 정해진 제안 ${list.length}건을 확인합니다. 미배정은 남겨 둡니다.`)) return;
+            for (const s of list) await doConfirm(s);
+            sel = null; render();
+        }
+        async function discardSel() { await saveSug(S.discard(sugs.find(x => x.id === sel.id))); sel = null; render(); }
+        async function restoreSug(id) { await saveSug(S.restore(sugs.find(x => x.id === id))); render(); }
+
+        async function fillGap() {
+            const a = parseHm(document.getElementById('fS').value), b = parseHm(document.getElementById('fE').value);
+            const t = taskOf(document.getElementById('fTask').value);
+            if (a === null || b === null || b <= a) return alert('시작·끝 시각을 확인하세요.');
+            if (!t) return alert('채울 할일을 고르세요.');
+            // 수동 제안을 만들고 바로 확인 → 기록(logs)과 할일 시간이 타이머와 같은 규칙으로 쌓임
+            const s = { id: `manual-${Date.now()}`, day, start: S.isoAt(day, a), end: S.isoAt(day, b), area: '근무', source: 'manual', taskId: t.id, status: 'suggested', createdAt: new Date().toISOString() };
+            await doConfirm(s); sel = null; render();
+        }
+
+        if (TEST) {   // 시험 모드: 로그인 창 없이 가짜 데이터
+            document.addEventListener('DOMContentLoaded', () => { const g = document.getElementById('tlAuthGate'); if (g) g.remove(); });
+            const g0 = document.getElementById('tlAuthGate'); if (g0) g0.remove();
+            day = store.testDay; document.getElementById('testFlag').innerHTML = '<span class="testflag">시험 모드 (저장 안 됨)</span>'; }
+        document.getElementById('day').value = day;
+        load();
+    </script>
+</body>
+
+</html>
