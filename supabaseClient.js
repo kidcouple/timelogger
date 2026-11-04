@@ -294,3 +294,16 @@ const supabase = {
 };
 
 window.supabaseAPI = supabase;
+
+// ---------- 항목 ID (고객사+프로젝트 공통, 위키 프로젝트.md 의 ID 와 같다) ----------
+// 두 표 전체에서 가장 큰 'I숫자' 다음 번호를 돌려준다. extra = 아직 저장 안 된 화면 목록(선택).
+window.tlNextItemId = async function (...extra) {
+    let rows = [].concat(...extra.filter(Boolean));
+    try {
+        const c = await supabase.getTable('clients'); const p = await supabase.getTable('projects');
+        rows = rows.concat(c || [], p || []);
+    } catch (e) { console.warn('항목 ID 계산용 목록 조회 실패(화면 목록만 사용)', e); }
+    let max = 0;
+    rows.forEach(r => { const m = /^I(\d+)$/.exec((r && (r.itemId || r.itemid)) || ''); if (m) max = Math.max(max, parseInt(m[1], 10)); });
+    return 'I' + String(max + 1).padStart(2, '0');
+};

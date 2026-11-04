@@ -439,7 +439,6 @@
         </div>
         <nav class="desktop-nav">
             <a href="index.html">할일목록</a>
-            <a href="timer.html">타이머</a>
             <a href="clients.html">고객사</a>
             <a href="projects.html" class="active">프로젝트</a>
         </nav>
@@ -498,6 +497,9 @@
                 </div>
                 <div><label class="fl">메모</label><textarea id="fMemo" class="fi" rows="3"
                         placeholder="프로젝트 설명"></textarea></div>
+                <div><label class="fl">항목 ID</label><input id="fItemId" class="fi" readonly placeholder="비어 있으면 저장 때 자동 부여"></div>
+                <div><label class="fl">폴더 (쉼표로 여러 개)</label><input id="fFolders" class="fi" placeholder="예) Development/OOO"></div>
+                <div><label class="fl">별칭 (쉼표로 여러 개)</label><input id="fAliases" class="fi" placeholder="일지 머리줄에 다르게 쓴 이름"><div style="font-size:11px; color:var(--sub); margin-top:4px">작업일지 프로젝트.md 는 이 화면의 항목 ID·폴더·별칭으로 자동 생성됩니다. 위키 파일을 직접 고치면 덮어씁니다.</div></div>
                 <div style="display:flex; gap:10px; margin-top:10px">
                     <button onclick="closeModal()" style="flex:1">취소</button>
                     <button class="primary" onclick="saveProject()" style="flex:2">저장하기</button>
@@ -510,10 +512,6 @@
         <a href="index.html" class="nav-item">
             <span class="nav-icon">📋</span>
             <span>할일목록</span>
-        </a>
-        <a href="timer.html" class="nav-item">
-            <span class="nav-icon">⏱</span>
-            <span>타이머</span>
         </a>
         <a href="clients.html" class="nav-item">
             <span class="nav-icon">🏢</span>
@@ -600,22 +598,27 @@
         async function saveProject() {
             const name = document.getElementById('fName').value.trim();
             if (!name) return;
-            const obj = { id: editId || ('P' + Date.now()), name, status: document.getElementById('fStatus').value, kind: normKind(document.getElementById('fKind').value), icon: document.getElementById('fIcon').value || '📁', memo: document.getElementById('fMemo').value.trim() };
+            const old = editId ? (projects.find(p => p.id === editId) || {}) : {};
+            const obj = Object.assign({}, old, { id: editId || ('P' + Date.now()), name, status: document.getElementById('fStatus').value, kind: normKind(document.getElementById('fKind').value), icon: document.getElementById('fIcon').value || '📁', memo: document.getElementById('fMemo').value.trim() });
+            obj.folders = document.getElementById('fFolders').value.trim();
+            obj.aliases = document.getElementById('fAliases').value.trim();
+            obj.itemId = old.itemId || await tlNextItemId(projects);   // 이미 있으면 그대로 (바꾸지 않음)
             if (editId) { const i = projects.findIndex(p => p.id === editId); projects[i] = obj; } else projects.push(obj);
             await save(); renderList(); closeModal(); if (!editId) alert('등록되었습니다.');
         }
 
-        function resetForm() { editId = null; document.getElementById('formTitle').textContent = '프로젝트 등록'; document.getElementById('fName').value = ''; document.getElementById('fStatus').value = 'active'; document.getElementById('fKind').value = DEFAULT_KIND; document.getElementById('fIcon').value = '📁'; document.getElementById('fMemo').value = ''; }
+        function resetForm() { editId = null; document.getElementById('formTitle').textContent = '프로젝트 등록'; document.getElementById('fName').value = ''; document.getElementById('fStatus').value = 'active'; document.getElementById('fKind').value = DEFAULT_KIND; document.getElementById('fIcon').value = '📁'; document.getElementById('fMemo').value = ''; ['fItemId', 'fFolders', 'fAliases'].forEach(i => document.getElementById(i).value = ''); }
 
         window.editProject = id => {
             const p = projects.find(x => x.id === id); editId = id;
             document.getElementById('formTitle').textContent = '프로젝트 수정';
             document.getElementById('fName').value = p.name; document.getElementById('fStatus').value = p.status; document.getElementById('fKind').value = normKind(p.kind);
             document.getElementById('fIcon').value = p.icon || '📁'; document.getElementById('fMemo').value = p.memo || '';
+            document.getElementById('fItemId').value = p.itemId || ''; document.getElementById('fFolders').value = p.folders || ''; document.getElementById('fAliases').value = p.aliases || '';
             document.getElementById('modalOverlay').style.display = 'flex';
         };
         window.deleteProject = async id => {
-            if (await TL_Confirm('삭제하시겠습니까?')) {
+            if (await TL_Confirm('삭제하시겠습니까?\n삭제하면 지난 작업 기록이 이 항목과 연결되지 않습니다. 끝난 프로젝트는 상태를 "완료"로 바꾸고 남겨 두세요.')) {
                 projects = projects.filter(p => p.id !== id);
                 await supabaseAPI.delete('projects', 'id', id);
                 await save(); renderList();

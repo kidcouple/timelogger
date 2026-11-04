@@ -481,7 +481,6 @@
 
         <nav class="desktop-nav">
             <a href="index.html">할일목록</a>
-            <a href="timer.html">타이머</a>
             <a href="clients.html" class="active">고객사</a>
             <a href="projects.html">프로젝트</a>
         </nav>
@@ -534,6 +533,11 @@
                 <div><label class="fl">연락처</label><input id="fPhone" class="fi" placeholder="010-0000-0000"></div>
                 <div><label class="fl">메모</label><textarea id="fMemo" class="fi" rows="3"
                         placeholder="추가 정보"></textarea></div>
+                <div><label class="fl">상태</label>
+                    <select id="fStatus" class="fi"><option value="사용">사용</option><option value="종료">종료 (삭제 대신)</option></select></div>
+                <div><label class="fl">항목 ID</label><input id="fItemId" class="fi" readonly placeholder="비어 있으면 저장 때 자동 부여"></div>
+                <div><label class="fl">폴더 (쉼표로 여러 개)</label><input id="fFolders" class="fi" placeholder="예) Development/OOO"></div>
+                <div><label class="fl">별칭 (쉼표로 여러 개)</label><input id="fAliases" class="fi" placeholder="일지 머리줄에 다르게 쓴 이름"><div style="font-size:11px; color:var(--sub); margin-top:4px">작업일지 프로젝트.md 는 이 화면의 항목 ID·폴더·별칭으로 자동 생성됩니다. 위키 파일을 직접 고치면 덮어씁니다.</div></div>
                 <div style="display:flex; gap:10px; margin-top:10px">
                     <button onclick="closeModal()" style="flex:1">취소</button>
                     <button class="primary" onclick="saveClient()" style="flex:2">저장하기</button>
@@ -546,10 +550,6 @@
         <a href="index.html" class="nav-item">
             <span class="nav-icon">📋</span>
             <span>할일목록</span>
-        </a>
-        <a href="timer.html" class="nav-item">
-            <span class="nav-icon">⏱</span>
-            <span>타이머</span>
         </a>
         <a href="clients.html" class="nav-item active">
             <span class="nav-icon">🏢</span>
@@ -720,7 +720,7 @@
                 return `<div class="client-row">
                   <div class="client-avatar">${initials}</div>
                   <div class="client-info">
-                    <div class="client-name">${c.name || '이름 없음'}</div>
+                    <div class="client-name">${c.name || '이름 없음'}${c.status === '종료' ? ' <span style="font-size:11px;color:var(--sub)">(종료)</span>' : ''}</div>
                     <div class="client-meta" title="${metaStr}">${metaStr}</div>
                   </div>
                   <div class="client-stats" style="display:flex; justify-content:flex-end; gap:24px; align-items:center;">
@@ -746,13 +746,18 @@
             const name = document.getElementById('fName').value.trim();
             if (!name) { alert('고객사명은 필수입니다.'); return; }
 
-            const obj = {
+            const old = editId ? (clients.find(c => c.id === editId) || {}) : {};
+            const obj = Object.assign({}, old, {   // 기존 필드(itemId/folders/aliases/status 등) 유지
                 id: editId || ('C' + Date.now()),
                 name,
                 contact: document.getElementById('fContact').value.trim(),
                 phone: document.getElementById('fPhone').value.trim(),
-                memo: document.getElementById('fMemo').value.trim()
-            };
+                memo: document.getElementById('fMemo').value.trim(),
+                status: document.getElementById('fStatus').value,
+                folders: document.getElementById('fFolders').value.trim(),
+                aliases: document.getElementById('fAliases').value.trim()
+            });
+            obj.itemId = old.itemId || await tlNextItemId(clients);   // 이미 있으면 그대로
 
             if (editId) {
                 const i = clients.findIndex(c => c.id === editId);
@@ -771,7 +776,8 @@
             editId = null;
             document.getElementById('formTitle').textContent = '데이터 등록';
 
-            ['fName', 'fContact', 'fPhone', 'fMemo'].forEach(id => document.getElementById(id).value = '');
+            ['fName', 'fContact', 'fPhone', 'fMemo', 'fItemId', 'fFolders', 'fAliases'].forEach(id => document.getElementById(id).value = '');
+            document.getElementById('fStatus').value = '사용';
         }
 
 
@@ -786,11 +792,13 @@
             document.getElementById('fContact').value = c.contact || '';
             document.getElementById('fPhone').value = c.phone || '';
             document.getElementById('fMemo').value = c.memo || '';
+            document.getElementById('fItemId').value = c.itemId || ''; document.getElementById('fFolders').value = c.folders || ''; document.getElementById('fAliases').value = c.aliases || '';
+            document.getElementById('fStatus').value = c.status === '종료' ? '종료' : '사용';
             document.getElementById('modalOverlay').style.display = 'flex';
         }
 
         async function deleteClient(id) {
-            if (await TL_Confirm('삭제하시겠습니까? 관련 업무 데이터는 유지되지만 고객사 연결이 끊어질 수 있습니다.')) {
+            if (await TL_Confirm('삭제하시겠습니까?\n삭제하면 지난 작업 기록이 이 항목과 연결되지 않습니다. 끝난 고객사는 수정에서 상태를 "종료"로 바꾸고 남겨 두세요.')) {
                 clients = clients.filter(c => c.id !== id);
                 await supabaseAPI.delete('clients', 'id', id);
                 await save();

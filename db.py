@@ -13,11 +13,11 @@ load_dotenv(override=True)
 TABLES = {
     "clients": {
         "pk": "id",
-        "columns": ["id", "name", "contact", "phone", "memo", "username"],
+        "columns": ["id", "name", "contact", "phone", "memo", "username", "status", "itemid", "folders", "aliases"],
     },
     "projects": {
         "pk": "id",
-        "columns": ["id", "name", "status", "icon", "memo", "username"],
+        "columns": ["id", "name", "status", "icon", "memo", "username", "kind", "itemid", "folders", "aliases"],
     },
     "tasks": {
         "pk": "id",
