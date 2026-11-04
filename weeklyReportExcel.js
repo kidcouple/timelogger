@@ -49,6 +49,47 @@
         return (p && p !== '"' && p !== '""') ? ['프로젝트', 2] : ['고객 운영', 1];
     }
 
+    // 할일 하나가 (금주 실적, 차주 일정)에 들어가는가. 타이머 없이 완료일 기준 (11-04).
+    // ※ app.py report_flags 와 같은 로직으로 유지할 것. index.html 미리보기도 window.TL_reportFlags 를 쓴다.
+    function reportFlags(t, wStart, wEnd, nStart, nEnd, loggedIds) {
+        const inrep = t.inreport ?? t.inReport;
+        const inrepS = String(inrep ?? '').trim().toLowerCase();
+        if (inrep === false || ['false', 'f', '0'].includes(inrepS)) return [false, false];
+        const explicit = inrep === true || ['true', 't', '1'].includes(inrepS);
+
+        const asD = parseTaskDate(t.aStart ?? t.astart), aeD = parseTaskDate(t.aEnd ?? t.aend);
+        const psD = parseTaskDate(t.pStart ?? t.pstart), peD = parseTaskDate(t.pEnd ?? t.pend);
+        const reqD = parseTaskDate(t.reqDate ?? t.reqdate);
+
+        const isNotDone = (t.status || '') !== 'done';
+        const isOpenProject = categoryOf(t)[0] === '프로젝트' && isNotDone;
+        const carried = explicit && isNotDone;
+
+        const actualTime = parseFloat(t.actualTime ?? t.actualtime ?? 0) || 0;
+        const workDate = asD || aeD || psD;
+        const timerWeek = (actualTime > 0 && workDate && wStart <= workDate && workDate <= wEnd) || (loggedIds && loggedIds.has(String(t.id)));
+        const doneInWeek = !!(aeD && wStart <= aeD && aeD <= wEnd);
+        const since = asD || reqD;
+        const carriedCur = carried && (!since || since <= wEnd);
+
+        const inCur = !!(isOpenProject || timerWeek || doneInWeek || carriedCur);
+        const inNext = !!((isNotDone && (isOpenProject || carried || intervalOverlapsWeek(psD, peD, nStart, nEnd)))
+            || (aeD && nStart <= aeD && aeD <= nEnd));
+        return [inCur, inNext];
+    }
+    window.TL_reportFlags = reportFlags;
+
+    // 주간보고에서 뺄 고객사. 서버판은 report_config.js(window.TL_REPORT_EXCLUDE), 공개 사이트(GitHub Pages)는 이 브라우저의
+    // localStorage 'TL_REPORT_EXCLUDE'(JSON 배열)에서 읽는다. 고객사 이름을 공개 저장소에 올리지 않기 위함 (11-04).
+    function excludedClients() {
+        let list = window.TL_REPORT_EXCLUDE;
+        if (!Array.isArray(list)) {
+            try { list = JSON.parse(localStorage.getItem('TL_REPORT_EXCLUDE') || '[]'); } catch (e) { list = []; }
+        }
+        return new Set((Array.isArray(list) ? list : []).map(x => String(x).trim()).filter(Boolean));
+    }
+    window.TL_excludedClients = excludedClients;
+
     function buildReportData(tasks, logs) {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -59,25 +100,20 @@
         const weekLabel = `${endDate.getMonth() + 1}월 ${Math.floor((endDate.getDate() - 1) / 7) + 1}주차`;
 
         const cur = [], next = [], issues = [];
-        // 자동 제안 1차: 그 주에 확인된 기록(logs)이 있는 할일도 금주 실적
+        // 자동 제안 1차: 그 주에 확인된 기록(logs)이 있는 할일도 금주 실적 (옛 규칙)
         const loggedIds = (typeof TL_Suggest !== 'undefined' && logs) ? TL_Suggest.taskIdsWithLogs(logs, startDate, endDate) : new Set();
         const seenNext = new Set();
+        const excluded = excludedClients();
+        let missingClient = 0;
 
         for (const t of tasks || []) {
-            if (t.client === '에이치에스케이') continue;
-            const aStart = t.aStart ?? t.astart, aEnd = t.aEnd ?? t.aend;
-            const pStart = t.pStart ?? t.pstart, pEnd = t.pEnd ?? t.pend;
-            const asD = parseTaskDate(aStart), aeD = parseTaskDate(aEnd);
-            const psD = parseTaskDate(pStart), peD = parseTaskDate(pEnd);
+            if (excluded.has(String(t.client || '').trim())) continue;
+            const aStart = t.aStart ?? t.astart;
+            const pStart = t.pStart ?? t.pstart;
 
-            const isNotDone = (t.status || '') !== 'done';
-            const isOpenProject = categoryOf(t)[0] === '프로젝트' && isNotDone;
+            const [inCur, inNext] = reportFlags(t, startDate, endDate, nextStartDate, nextEndDate, loggedIds);
 
-            const actualTime = parseFloat(t.actualTime ?? t.actualtime ?? 0) || 0;
-            const workDate = asD || aeD || psD;
-            const workedThisWeek = (actualTime > 0 && workDate && startDate <= workDate && workDate <= endDate) || loggedIds.has(String(t.id));
-
-            if (isOpenProject || workedThisWeek) {
+            if (inCur) {
                 const item = {
                     client: String(t.client || '').trim() || '미지정',
                     project: t.project,
@@ -88,11 +124,12 @@
                     issueProgress: t.issueProgress ?? t.issueprogress,
                     issueFollowUp: t.issueFollowUp ?? t.issuefollowup
                 };
+                if (item.client === '미지정') missingClient++;
                 cur.push(item);
                 if (item.isIssue) issues.push(item);
             }
 
-            if (isNotDone && (isOpenProject || intervalOverlapsWeek(psD, peD, nextStartDate, nextEndDate))) {
+            if (inNext) {
                 const tid = String(t.id || t.seq || '') || `${t.client}::${t.title}`;
                 if (!seenNext.has(tid)) {
                     seenNext.add(tid);
@@ -155,7 +192,8 @@
             weekLabel,
             cur: groupByClient(cur, true).sort(byCatClient),
             next: groupByClient(next, false).sort(byCatClient),
-            issues
+            issues,
+            missingClient
         };
     }
 
@@ -245,6 +283,7 @@
         await wb.xlsx.load(await resp.arrayBuffer());
 
         const data = buildReportData(tasks, logs);
+        window._tlMissingClient = data.missingClient || 0;   // 화면 안내용 (고객사 없는 요청 수)
         const ws1 = wb.getWorksheet('■CO팀 주요 업무');
         const ws2 = wb.getWorksheet('■ 주요 이슈 및 특이사항');
         if (!ws1 || !ws2) throw new Error('템플릿 시트 이름이 예상과 다릅니다.');

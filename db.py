@@ -27,6 +27,7 @@ TABLES = {
             "actualtime", "reqdetail", "procdetail", "reqimages", "procimages",
             "createdat", "isissue", "issuememo", "issueprogress", "issuefollowup",
             "notionlink", "username", "isurgent", "isimportant", "subtasks",
+            "inreport", "mailkey",
         ],
     },
     "logs": {
@@ -39,7 +40,7 @@ TABLES = {
     },
 }
 
-BOOL_COLS = {"isissue", "isurgent", "isimportant"}
+BOOL_COLS = {"isissue", "isurgent", "isimportant", "inreport"}
 JSON_COLS = {"content_json"}
 KEEPALIVE_ID = "00000000-0000-4000-8000-000000000001"
 PAGE = 1000

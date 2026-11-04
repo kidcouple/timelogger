@@ -13,6 +13,7 @@
     const EXCLUDE_SUBJECTS = ['EchoLine 서비스', '[성주 주간 실적 보고]'];
 
     let rows = [];
+    let replied = [];         // 내가 회신해서 목록에서 빠졌지만 아직 완료 처리 안 한 등록 요청 (status='replied')
     let state = 'idle';       // idle | login | loading | ok | error
     let errMsg = '';
     let syncMsg = '';
@@ -91,11 +92,26 @@
     }
 
     // ---------- 데이터 ----------
+    // 회신 완료(replied) 목록: 표에 replied_at 열이 아직 없으면 조용히 빈 목록
+    async function loadReplied() {
+        try { return await api('GET', 'select=key,replied_at&status=eq.replied'); } catch (e) { if (e.needLogin) throw e; return []; }
+    }
+
+    // 메일 제목 → 요청건 제목: RE:/Fw: 반복과 끝의 '의 건'만 정리한다 ([LSAT] 같은 태그·괄호 설명은 남김). 등록 화면에서 고칠 수 있다.
+    function cleanTitle(subject) {
+        const raw = String(subject || '').trim();
+        let t = raw.replace(/^\s*((re|fw|fwd|회신|전달)\s*:\s*)+/i, '');
+        t = t.replace(/\s*의\s*건(\s*[(（][^)）]*[)）])?\s*$/, '$1').trim();
+        return t || raw;
+    }
+    const registeredTask = key => (window.TL_getTasks ? TL_getTasks() : []).find(t => t.mailkey === key);
+
     async function load() {
         if (!loadAuth()) { state = 'login'; render(); return; }
         if (state !== 'ok') { state = 'loading'; syncMsg = syncMsg || '불러오는 중..'; render(); }
         try {
             rows = (await api('GET', 'select=key,kind,date,age,client,subject,gmail&status=eq.open&order=age.asc')).filter(keepRow);
+            replied = await loadReplied();
             state = 'ok';
             syncMsg = '';
             loadedAt = new Date();
@@ -145,6 +161,7 @@
             render();
             showMailBusy(syncMsg);
             rows = (await api('GET', 'select=key,kind,date,age,client,subject,gmail&status=eq.open&order=age.asc')).filter(keepRow);
+            replied = await loadReplied();
             state = 'ok';
             syncMsg = '';
             loadedAt = new Date();
@@ -284,9 +301,25 @@
             <span class="mf-age" style="color:${ageColor}" title="${esc(when.title)}">${esc(when.label)}</span>
             <span class="mf-actions">
                 ${link ? `<a class="mf-btn" href="${esc(link)}" target="_blank" rel="noopener noreferrer">Gmail 열기</a>` : ''}
+                ${registeredTask(r.key)
+                    ? `<button type="button" class="mf-btn mf-reg" data-key="${esc(r.key)}" title="이미 등록됨 — 눌러서 수정">등록됨 ✓</button>`
+                    : `<button type="button" class="mf-btn mf-reg" data-key="${esc(r.key)}" title="주간보고에 넣을 요청으로 등록">주간보고 등록</button>`}
                 <button type="button" class="mf-btn mf-done" data-key="${esc(r.key)}">회신 불필요</button>
             </span>
         </div>`;
+    }
+
+    // 내가 회신해서 목록에서 빠진 등록 요청 → 완료 후보. [완료 처리] 는 등록 화면을 열고 완료일(회신일+2일)을 채운다.
+    function candHtml() {
+        const tasks = window.TL_getTasks ? TL_getTasks() : [];
+        const items = replied.map(r => ({ r, t: tasks.find(x => x.mailkey === r.key && x.status !== 'done') })).filter(x => x.t);
+        if (!items.length) return '';
+        return `<div class="mf-msg" style="margin-top:6px;border-top:1px solid var(--border);padding-top:8px">✅ 회신 완료 — 완료 처리할 요청 ${items.length}건</div>` + items.map(({ r, t }) => `<div class="mf-row">
+            <span class="mf-client" title="${esc(t.client)}">${esc(t.client || '-')}</span>
+            <span class="mf-subject" title="${esc(t.title)}">${esc(t.title)}</span>
+            <span class="mf-age" title="회신일">${esc(String(r.replied_at || '').slice(5))}</span>
+            <span class="mf-actions"><button type="button" class="mf-btn mf-fin" data-id="${esc(t.id)}" data-at="${esc(r.replied_at || '')}">완료 처리</button></span>
+        </div>`).join('');
     }
 
     function bodyHtml() {
@@ -300,8 +333,8 @@
         }
         if (state === 'loading' || state === 'idle') return `<div class="mf-msg">${esc(syncMsg || '불러오는 중..')}</div>`;
         if (state === 'error') return `<div class="mf-msg mf-err">불러오기 실패: ${esc(errMsg)}</div>`;
-        if (!rows.length) return '<div class="mf-msg">회신할 메일 없음</div>';
-        return rows.map(rowHtml).join('');
+        if (!rows.length) return '<div class="mf-msg">회신할 메일 없음</div>' + candHtml();
+        return rows.map(rowHtml).join('') + candHtml();
     }
 
     function render() {
@@ -327,6 +360,22 @@
         if ($('mfReload')) $('mfReload').onclick = reload;
         if ($('mfLogout')) $('mfLogout').onclick = logout;
         if ($('mfLoginForm')) $('mfLoginForm').onsubmit = login;
+        card.querySelectorAll('.mf-reg').forEach(b => {
+            b.onmousedown = ev => ev.preventDefault();
+            b.onclick = ev => {
+                ev.preventDefault();
+                const r = rows.find(x => x.key === b.dataset.key);
+                if (!r) return;
+                const t = registeredTask(r.key);
+                if (t) { if (window.TL_editTask) TL_editTask(t.id); return; }
+                if (!window.TL_openTaskFromMail) { alert('할일 화면이 아직 준비되지 않았습니다.'); return; }
+                TL_openTaskFromMail({ title: cleanTitle(r.subject), client: r.client && r.client !== '-' ? r.client : '', date: r.date, reqType: '메일', mailkey: r.key });
+            };
+        });
+        card.querySelectorAll('.mf-fin').forEach(b => {
+            b.onmousedown = ev => ev.preventDefault();
+            b.onclick = ev => { ev.preventDefault(); if (window.TL_completeTask) TL_completeTask(b.dataset.id, b.dataset.at); };
+        });
         card.querySelectorAll('.mf-done').forEach(b => {
             b.onmousedown = ev => ev.preventDefault();
             b.onclick = ev => { ev.preventDefault(); markDone(b.dataset.key, b); };
@@ -389,6 +438,7 @@
     }
 
     window.TL_reloadMailFollowups = reload;
+    window.TL_mailRender = render;
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
     else mount();

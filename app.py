@@ -18,6 +18,9 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 import db as local_db
 
+# 주간보고에서 뺄 고객사 (쉼표로 구분). 고객사 실명을 코드에 쓰지 않고 .env 에 둔다 (11-04).
+REPORT_EXCLUDE_CLIENTS = {s.strip() for s in os.environ.get('REPORT_EXCLUDE_CLIENTS', '').split(',') if s.strip()}
+
 app = Flask(__name__, static_folder=None)
 
 # Configuration
@@ -195,6 +198,48 @@ def logged_task_ids(logs, w_start, w_end):
     return ids
 
 
+def report_flags(t, w_start, w_end, n_start, n_end, logged_ids):
+    """할일 하나가 (금주 실적에 들어가는가, 차주 일정에 들어가는가). 타이머가 없어도 되게 완료일 기준 (11-04).
+
+    inreport: False 면 보고서에서 뺀다. True 면 메일·수기로 등록한 요청건(미완료는 계속 이월). 비어 있으면 예전 할일(옛 규칙).
+    금주 실적: 진행 중 프로젝트 / 완료일(aend)이 그 주에 든 것 / 등록한 미완료 요청 / (옛 규칙) 타이머·확인된 기록이 그 주에 있는 것
+    차주 일정: 미완료이면서 (진행 중 프로젝트 / 등록한 요청 / 계획기간이 차주와 겹침) 또는 완료일이 차주인 것
+    ※ weeklyReportExcel.js buildReportData · index.html renderWeeklyReportPreview 와 같은 로직으로 유지할 것.
+    """
+    inrep = t.get('inreport')
+    if inrep is False or str(inrep).strip().lower() in ('false', 'f', '0'):
+        return False, False
+    explicit = inrep is True or str(inrep).strip().lower() in ('true', 't', '1')
+
+    as_date = parse_task_date(t.get('astart') or t.get('aStart'))
+    ae_date = parse_task_date(t.get('aend') or t.get('aEnd'))
+    ps_date = parse_task_date(t.get('pstart') or t.get('pStart'))
+    pe_date = parse_task_date(t.get('pend') or t.get('pEnd'))
+    req_date = parse_task_date(t.get('reqdate') or t.get('reqDate'))
+
+    is_not_done = (t.get('status') or '') != 'done'
+    p_name = str(t.get('project') or '').strip()
+    is_open_project = bool(p_name and p_name not in ['"', '""']) and is_not_done
+    carried = explicit and is_not_done
+
+    try:
+        actual_time = float(t.get('actualtime') or t.get('actualTime') or 0)
+    except (TypeError, ValueError):
+        actual_time = 0
+    work_date = as_date or ae_date or ps_date
+    timer_week = (actual_time > 0 and work_date is not None and w_start <= work_date <= w_end) \
+        or str(t.get('id') or '') in logged_ids
+    done_in_week = ae_date is not None and w_start <= ae_date <= w_end
+    since = as_date or req_date
+    carried_cur = carried and (since is None or since <= w_end)
+
+    in_cur = is_open_project or timer_week or done_in_week or carried_cur
+    in_next = (is_not_done and (is_open_project or carried
+                                or interval_overlaps_week(ps_date, pe_date, n_start, n_end))) \
+        or (ae_date is not None and n_start <= ae_date <= n_end)
+    return in_cur, in_next
+
+
 def unassigned_confirmed_minutes(sugs, w_start, w_end):
     """확인됐지만 할일이 없는 제안 시간(분) — 주간보고에 넣지 않고 경고 한 줄로만."""
     total = 0
@@ -338,42 +383,20 @@ def generate_weekly_report():
             issue_tasks = []
             
             seen_next = set()
+            missing_client = 0
             for t in tasks:
-                if t.get('client') == '에이치에스케이': continue
+                if str(t.get('client') or '').strip() in REPORT_EXCLUDE_CLIENTS: continue
 
                 astart_str = t.get('astart') or t.get('aStart')
-                aend_str = t.get('aend') or t.get('aEnd')
                 pstart_str = t.get('pstart') or t.get('pStart')
-                pend_str = t.get('pend') or t.get('pEnd')
-
-                as_date = parse_task_date(astart_str)
-                ae_date = parse_task_date(aend_str)
-                ps_date = parse_task_date(pstart_str)
-                pe_date = parse_task_date(pend_str)
 
                 clabel = (str(t.get('client') or '').strip() or '미지정')
 
-                status_val = t.get('status') or ''
-                is_not_done = status_val != 'done'
-                p_name = str(t.get('project') or '').strip()
-                is_open_project = bool(p_name and p_name not in ['"', '""']) and is_not_done
-
-                # 금주 실적: '타이머로 실제 작업한 것'을 기준으로 한다.
-                #   - actualtime(실제 소요시간)이 있고, 실착수일(aStart)이 금주(전주 금~금주 목)에 든 경우.
-                #   - aStart가 비어 있으면 aEnd/pStart로 보완 판정.
-                #   - 진행 중(미완료) 프로젝트는 날짜와 무관하게 항상 포함한다.
-                try:
-                    actual_time = float(t.get('actualtime') or t.get('actualTime') or 0)
-                except (TypeError, ValueError):
-                    actual_time = 0
-                work_date = as_date or ae_date or ps_date
-                worked_this_week = (
-                    actual_time > 0 and work_date is not None
-                    and start_date <= work_date <= end_date
-                ) or str(t.get('id') or '') in logged_ids
-                in_cur = is_open_project or worked_this_week
+                # 금주 실적·차주 일정 판정은 report_flags 한 곳에서 (weeklyReportExcel.js·index.html 과 같게 유지)
+                in_cur, in_next = report_flags(t, start_date, end_date, next_start_date, next_end_date, logged_ids)
 
                 if in_cur:
+                    if clabel == '미지정': missing_client += 1
                     item = {
                         'client': clabel,
                         'project': t.get('project'),
@@ -387,12 +410,7 @@ def generate_weekly_report():
                     cur_week_results.append(item)
                     if item.get('isissue'): issue_tasks.append(item)
 
-                # 차주: 미완료이면서 (계획기간이 차주와 겹치거나, 진행 중 프로젝트)인 경우.
-                #       진행 중(미완료) 프로젝트는 날짜와 무관하게 차주 계획에도 항상 포함.
-                if is_not_done and (
-                    is_open_project
-                    or interval_overlaps_week(ps_date, pe_date, next_start_date, next_end_date)
-                ):
+                if in_next:
                     tid = str(t.get('id') or t.get('seq') or '')
                     if not tid:
                         tid = f"{t.get('client')}::{t.get('title')}"
@@ -601,7 +619,7 @@ def generate_weekly_report():
                 'week_label': week_label, 
                 'username': user,
                 'content_json': {'cur_count': len(cur_week_results), 'next_count': len(next_week_plans), 'issue_count': len(issue_tasks),
-                                 'unassigned_min': unassigned_min}
+                                 'unassigned_min': unassigned_min, 'missing_client': missing_client}
             }
             local_db.upsert('weekly_reports', report_data, username=user, token=_bearer())
 
@@ -619,10 +637,10 @@ def generate_weekly_report():
                     else:
                         subprocess.run(['xdg-open', output_file])
                         
-                    return jsonify({'status': 'success', 'file': output_file, 'action': 'opened', 'unassigned_min': unassigned_min})
+                    return jsonify({'status': 'success', 'file': output_file, 'action': 'opened', 'unassigned_min': unassigned_min, 'missing_client': missing_client})
                 except Exception as e:
                     logger.warning(f"Failed to open excel: {str(e)}")
-                    return jsonify({'status': 'success', 'file': output_file, 'action': 'opened', 'unassigned_min': unassigned_min, 'warning': f'Failed to open locally: {str(e)}'})
+                    return jsonify({'status': 'success', 'file': output_file, 'action': 'opened', 'unassigned_min': unassigned_min, 'missing_client': missing_client, 'warning': f'Failed to open locally: {str(e)}'})
 
 
         if action == 'open':
@@ -780,6 +798,7 @@ STATIC_FILES = {
     'fonts/RIXModernGothic-L.ttf', 'fonts/RIXModernGothic-M.ttf', 'fonts/RIXModernGothic-B.ttf', 'fonts/RIXModernGothic-EB.ttf',
     'supabaseClient.js', 'weeklyReportExcel.js', 'echoline.js', 'mailFollowups.js', 'service-worker.js',
     'public-config.json', 'manifest.json', 'report_template.xlsx',
+    'wbs_config.js', 'report_config.js',   # 이름이 든 설정(공개 저장소에는 올리지 않음 — .gitignore). 없으면 404 로 건너뜀
     'icon-192.png', 'icon-512.png', 'apple-touch-icon.png',
 }
 
