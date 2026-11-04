@@ -1,4 +1,4 @@
-const CACHE_NAME = 'time-logger-v40';
+const CACHE_NAME = 'time-logger-v41';
 const ASSETS = [
   './',
   './index.html',
@@ -38,8 +38,13 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // 화면(index.html 등) 이동은 브라우저 HTTP 캐시(GitHub Pages max-age=600)를 거치지 않고 항상 새로 받는다 (11-04:
+  // 배포 직후 예전 index.html + 새 mailFollowups.js 가 섞여 '할일 화면이 아직 준비되지 않았습니다' 가 뜨던 문제)
+  const fresh = event.request.mode === 'navigate'
+    ? fetch(event.request.url, { cache: 'no-store', credentials: 'same-origin' })
+    : fetch(event.request);
   event.respondWith(
-    fetch(event.request)
+    fresh
       .then((networkResponse) => {
         return caches.open(CACHE_NAME).then((cache) => {
           if (event.request.method === 'GET') {

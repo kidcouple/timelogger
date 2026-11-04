@@ -6,6 +6,7 @@
     const TABLE = 'mail_followups';
     const SYNC_TABLE = 'mail_sync_requests';
     const OPEN_KEY = 'TL_MAIL_CARD_OPEN';
+    const RELOAD_KEY = 'TL_MAIL_RELOADED';   // 화면 버전이 안 맞을 때 자동 새로고침을 한 번만
     const REFRESH_MS = 3 * 60 * 1000;
     const PICKUP_WAIT_MS = 30 * 1000;      // 맥미니가 요청을 집어 가길 기다리는 시간
     const SYNC_WAIT_MS = 16 * 60 * 1000;   // 집어 간 뒤 mail_hourly.sh(최대 15분)를 기다리는 시간
@@ -368,7 +369,17 @@
                 if (!r) return;
                 const t = registeredTask(r.key);
                 if (t) { if (window.TL_editTask) TL_editTask(t.id); return; }
-                if (!window.TL_openTaskFromMail) { alert('할일 화면이 아직 준비되지 않았습니다.'); return; }
+                if (!window.TL_openTaskFromMail) {
+                    // 예전 index.html(브라우저 캐시)과 새 이 파일이 섞인 경우: 한 번만 자동 새로고침
+                    if (!sessionStorage.getItem(RELOAD_KEY)) {
+                        sessionStorage.setItem(RELOAD_KEY, '1');
+                        alert('화면이 예전 버전입니다. 새로고침합니다.');
+                        location.reload();
+                    } else {
+                        alert('화면이 아직 예전 버전입니다. 탭을 닫고 다시 열어 주세요.');
+                    }
+                    return;
+                }
                 TL_openTaskFromMail({ title: cleanTitle(r.subject), client: r.client && r.client !== '-' ? r.client : '', date: r.date, reqType: '메일', mailkey: r.key });
             };
         });
@@ -426,6 +437,7 @@
         const anchor = $('statusPanel') || $('listContainer');
         if (!anchor || $('mailFollowupCard')) return;
         injectStyle();
+        if (window.TL_openTaskFromMail) { try { sessionStorage.removeItem(RELOAD_KEY); } catch (e) { } }
         const card = document.createElement('div');
         card.id = 'mailFollowupCard';
         anchor.parentNode.insertBefore(card, anchor);
