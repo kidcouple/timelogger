@@ -1,5 +1,5 @@
 // 서버(app.py /api/weekly-report)가 없는 GitHub Pages 환경용: 브라우저에서 템플릿을 채워 엑셀을 내려받는다.
-// 집계/배치 로직은 app.py generate_weekly_report 와 동일하게 유지할 것.
+// 집계/배치 로직은 app.py generate_weekly_report 와 동일하게 유지할 것. 금주 실적은 work_entries(위키 작업일지), 차주·이슈는 할일.
 (function () {
     const EXCELJS_URL = 'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js';
     const TEMPLATE_URL = 'report_template.xlsx';
@@ -49,33 +49,23 @@
         return (p && p !== '"' && p !== '""') ? ['프로젝트', 2] : ['고객 운영', 1];
     }
 
-    // 할일 하나가 (금주 실적, 차주 일정)에 들어가는가. 타이머 없이 완료일 기준 (11-04).
+    // 할일 하나가 (차주 계획에 들어가는가, 이슈에 들어가는가). 금주 실적은 할일이 아니라 work_entries(위키 작업일지)에서 만든다 (11-04).
+    // 차주 계획: 완료되지 않았고 실행계획일자(pStart~pEnd)가 차주와 겹치는 할일. 이슈: isIssue 이면서 미완료이거나 금주에 완료된 할일.
+    // inreport=false 인 할일은 둘 다 뺀다.
     // ※ app.py report_flags 와 같은 로직으로 유지할 것. index.html 미리보기도 window.TL_reportFlags 를 쓴다.
-    function reportFlags(t, wStart, wEnd, nStart, nEnd, loggedIds) {
+    function reportFlags(t, wStart, wEnd, nStart, nEnd) {
         const inrep = t.inreport ?? t.inReport;
         const inrepS = String(inrep ?? '').trim().toLowerCase();
         if (inrep === false || ['false', 'f', '0'].includes(inrepS)) return [false, false];
-        const explicit = inrep === true || ['true', 't', '1'].includes(inrepS);
 
-        const asD = parseTaskDate(t.aStart ?? t.astart), aeD = parseTaskDate(t.aEnd ?? t.aend);
+        const aeD = parseTaskDate(t.aEnd ?? t.aend);
         const psD = parseTaskDate(t.pStart ?? t.pstart), peD = parseTaskDate(t.pEnd ?? t.pend);
-        const reqD = parseTaskDate(t.reqDate ?? t.reqdate);
-
         const isNotDone = (t.status || '') !== 'done';
-        const isOpenProject = categoryOf(t)[0] === '프로젝트' && isNotDone;
-        const carried = explicit && isNotDone;
+        const isIssueTask = !!(t.isIssue ?? t.isissue);
 
-        const actualTime = parseFloat(t.actualTime ?? t.actualtime ?? 0) || 0;
-        const workDate = asD || aeD || psD;
-        const timerWeek = (actualTime > 0 && workDate && wStart <= workDate && workDate <= wEnd) || (loggedIds && loggedIds.has(String(t.id)));
-        const doneInWeek = !!(aeD && wStart <= aeD && aeD <= wEnd);
-        const since = asD || reqD;
-        const carriedCur = carried && (!since || since <= wEnd);
-
-        const inCur = !!(isOpenProject || timerWeek || doneInWeek || carriedCur);
-        const inNext = !!((isNotDone && (isOpenProject || carried || intervalOverlapsWeek(psD, peD, nStart, nEnd)))
-            || (aeD && nStart <= aeD && aeD <= nEnd));
-        return [inCur, inNext];
+        const inNext = !!(isNotDone && intervalOverlapsWeek(psD, peD, nStart, nEnd));
+        const inIssue = isIssueTask && (isNotDone || !!(aeD && wStart <= aeD && aeD <= wEnd));
+        return [inNext, inIssue];
     }
     window.TL_reportFlags = reportFlags;
 
@@ -90,7 +80,55 @@
     }
     window.TL_excludedClients = excludedClients;
 
-    function buildReportData(tasks, logs) {
+    // 금주 실적: work_entries 중 금~목 안이고 종류가 운영·프로젝트인 행을 (고객사, 프로젝트, 작업명)으로 합쳐 기존 cur 항목 모양으로 돌려준다.
+    // ※ app.py weekly_entries_cur 와 같은 로직으로 유지할 것. index.html 미리보기도 window.TL_curFromEntries 를 쓴다.
+    function curFromEntries(entries, wStart, wEnd, excluded) {
+        const merged = new Map();
+        for (const e of entries || []) {
+            let kind = String(e.kind || '').trim();
+            if (kind === '고객사운영') kind = '운영';
+            if (kind !== '운영' && kind !== '프로젝트') continue;
+            const d = parseTaskDate(e.day);
+            if (!d || d < wStart || d > wEnd) continue;
+            const client = String(e.client || '').trim() || '미지정';
+            if (excluded && excluded.has(client)) continue;
+            const title = String(e.title || '').trim() || String(e.item || '').trim();
+            if (!title) continue;
+            // 프로젝트 종류만 프로젝트 칸으로 (categoryOf 가 project 유무로 가른다)
+            const project = kind === '프로젝트' ? (String(e.project || '').trim() || String(e.item || '').trim()) : '';
+            const key = JSON.stringify([client, project, title]);
+            const prev = merged.get(key);
+            if (prev) { if (d < prev._d) { prev._d = d; prev.aStart = formatTaskDate(d); } }
+            else merged.set(key, { client, project, title, aStart: formatTaskDate(d), _d: d, isIssue: false });
+        }
+        return [...merged.values()].map(({ _d, ...rest }) => rest);
+    }
+    window.TL_curFromEntries = curFromEntries;
+
+    // '등록' 화면에서 직접 넣은 시간(할일 actualTime 분 + 작업 일자 aStart)을 work_entries 와 같은 모양의 행으로 (11-04).
+    // 작업일지(위키)에 없는 일도 작업시간·금주 실적에 들어가게 한다. ※ app.py entries_from_tasks 와 같은 로직으로 유지할 것.
+    function entriesFromTasks(tasks) {
+        const out = [];
+        for (const t of tasks || []) {
+            const inrep = t.inreport ?? t.inReport;
+            if (inrep === false || ['false', 'f', '0'].includes(String(inrep ?? '').trim().toLowerCase())) continue;
+            const mins = Math.round(parseFloat(t.actualTime ?? t.actualtime ?? 0) || 0);
+            const d = parseTaskDate(t.aStart ?? t.astart);
+            if (mins <= 0 || !d) continue;
+            const client = String(t.client || '').trim();
+            const p = String(t.project ?? '').trim();
+            const project = (p && p !== '"' && p !== '""') ? p : '';
+            const kind = project ? '프로젝트' : (client && client !== '기타') ? '운영' : '미등록';
+            const pad = n => String(n).padStart(2, '0');
+            out.push({ id: 'task-' + t.id, day: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+                       kind, client, project, item: project || client || '(고객사 없음)', title: String(t.title || '').trim(),
+                       minutes: mins, source: '등록' });
+        }
+        return out;
+    }
+    window.TL_entriesFromTasks = entriesFromTasks;
+
+    function buildReportData(tasks, entries) {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const endDate = addDays(today, -((pyWeekday(today) - 3 + 7) % 7)); // 목요일
@@ -99,34 +137,29 @@
         const nextEndDate = addDays(endDate, 7);
         const weekLabel = `${endDate.getMonth() + 1}월 ${Math.floor((endDate.getDate() - 1) / 7) + 1}주차`;
 
-        const cur = [], next = [], issues = [];
-        // 자동 제안 1차: 그 주에 확인된 기록(logs)이 있는 할일도 금주 실적 (옛 규칙)
-        const loggedIds = (typeof TL_Suggest !== 'undefined' && logs) ? TL_Suggest.taskIdsWithLogs(logs, startDate, endDate) : new Set();
+        const next = [], issues = [];
         const seenNext = new Set();
         const excluded = excludedClients();
         let missingClient = 0;
 
+        // 금주 실적 = 위키 작업일지(work_entries)에서 온 운영·프로젝트 작업명
+        const cur = curFromEntries(entries, startDate, endDate, excluded);
+        missingClient = cur.filter(i => i.client === '미지정').length;
+
         for (const t of tasks || []) {
             if (excluded.has(String(t.client || '').trim())) continue;
-            const aStart = t.aStart ?? t.astart;
-            const pStart = t.pStart ?? t.pstart;
+            const [inNext, inIssue] = reportFlags(t, startDate, endDate, nextStartDate, nextEndDate);
 
-            const [inCur, inNext] = reportFlags(t, startDate, endDate, nextStartDate, nextEndDate, loggedIds);
-
-            if (inCur) {
-                const item = {
+            if (inIssue) {
+                issues.push({
                     client: String(t.client || '').trim() || '미지정',
                     project: t.project,
                     title: t.title || '제목 없음',
-                    aStart: aStart || pStart || '',
-                    isIssue: !!(t.isIssue ?? t.isissue),
+                    isIssue: true,
                     issueMemo: t.issueMemo ?? t.issuememo,
                     issueProgress: t.issueProgress ?? t.issueprogress,
                     issueFollowUp: t.issueFollowUp ?? t.issuefollowup
-                };
-                if (item.client === '미지정') missingClient++;
-                cur.push(item);
-                if (item.isIssue) issues.push(item);
+                });
             }
 
             if (inNext) {
@@ -274,7 +307,7 @@
         });
     }
 
-    async function generateWeeklyReportExcel(tasks, user, logs) {
+    async function generateWeeklyReportExcel(tasks, user, entries) {
         const ExcelJS = await loadExcelJS();
         const resp = await fetch(TEMPLATE_URL, { cache: 'no-store' });
         if (!resp.ok) throw new Error(`엑셀 템플릿(${TEMPLATE_URL})을 불러오지 못했습니다.`);
@@ -282,7 +315,7 @@
         const wb = new ExcelJS.Workbook();
         await wb.xlsx.load(await resp.arrayBuffer());
 
-        const data = buildReportData(tasks, logs);
+        const data = buildReportData(tasks, entries);
         window._tlMissingClient = data.missingClient || 0;   // 화면 안내용 (고객사 없는 요청 수)
         const ws1 = wb.getWorksheet('■CO팀 주요 업무');
         const ws2 = wb.getWorksheet('■ 주요 이슈 및 특이사항');

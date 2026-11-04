@@ -295,14 +295,17 @@
         const ageColor = age >= 7 ? 'var(--red)' : age >= 3 ? '#ff9800' : 'var(--sub)';
         const when = receivedOn(r);
         const link = safeGmail(r.gmail);
+        const regTask = registeredTask(r.key);
+        // 보낸 사람으로 고객사를 알 수 없으면(빈칸·'-') 주간보고 등록 때 입력한 고객사를 보여 준다
+        const client = (r.client && r.client !== '-') ? r.client : ((regTask && regTask.client) || '');
         return `<div class="mf-row">
             <span class="mf-kind" style="border-color:${color};color:${color}">${esc(label)}</span>
-            <span class="mf-client" title="${esc(r.client)}">${esc(r.client || '-')}</span>
+            <span class="mf-client" title="${esc(client)}">${esc(client || '-')}</span>
             <span class="mf-subject" title="${esc(r.subject)}">${esc(r.subject || '(제목 없음)')}</span>
             <span class="mf-age" style="color:${ageColor}" title="${esc(when.title)}">${esc(when.label)}</span>
             <span class="mf-actions">
                 ${link ? `<a class="mf-btn" href="${esc(link)}" target="_blank" rel="noopener noreferrer">Gmail 열기</a>` : ''}
-                ${registeredTask(r.key)
+                ${regTask
                     ? `<button type="button" class="mf-btn mf-reg" data-key="${esc(r.key)}" title="이미 등록됨 — 눌러서 수정">등록됨 ✓</button>`
                     : `<button type="button" class="mf-btn mf-reg" data-key="${esc(r.key)}" title="주간보고에 넣을 요청으로 등록">주간보고 등록</button>`}
                 <button type="button" class="mf-btn mf-done" data-key="${esc(r.key)}">회신 불필요</button>

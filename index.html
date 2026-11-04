@@ -14,7 +14,6 @@
     <script src="wbs_config.js"></script>
     <script src="report_config.js"></script>
     <script>(function(){var P=window.TL_WBS_PROJECT;window.TL_WBS_PROJECT=P||"\u0000";document.addEventListener("DOMContentLoaded",function(){document.querySelectorAll("[data-tl-wbs]").forEach(function(e){e.textContent=P||""})})})()</script>
-    <script src="suggestLogic.js"></script>
     <script src="weeklyReportExcel.js"></script>
     <script src="echoline.js"></script>
     <script src="mailFollowups.js?v=38"></script>
@@ -859,6 +858,19 @@
         .subtask-item input[type="checkbox"] { cursor: pointer; }
         .subtask-item input[type="text"] { flex: 1; background: transparent; border: 1px solid transparent; color: var(--text); padding: 2px 4px; }
         .subtask-item input[type="text"]:focus { border-bottom: 1px solid var(--primary); outline: none; }
+        /* 업무 등록 화면의 고객사·프로젝트 '+ 새로 추가' */
+        .fl-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+        .fl-row label.fl { margin-bottom: 0; }
+        .mini-add { border: 1px solid var(--primary); color: var(--primary); background: transparent; border-radius: 4px; font-size: 11px; line-height: 1.6; padding: 0 6px; cursor: pointer; }
+        .mini-add:hover { background: var(--primary); color: #fff; }
+        .qa-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 9000; }
+        .qa-overlay.open { display: flex; }
+        .qa-box { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 10px; padding: 18px; width: 320px; max-width: 90vw; box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
+        .qa-title { font-weight: 600; margin-bottom: 10px; }
+        .qa-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 14px; }
+        .qa-btn { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--text); cursor: pointer; }
+        .qa-primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+        .qa-btn:disabled { opacity: .6; cursor: default; }
     </style>
 </head>
 
@@ -881,7 +893,6 @@
         </div>
         <nav class="desktop-nav">
             <a href="index.html" class="active">할일목록</a>
-            <a href="review.html" title="자동 제안 시간표를 확인·배정">하루 끝 확인</a>
             <a href="clients.html">고객사</a>
             <a href="projects.html">프로젝트</a>
         </nav>
@@ -1044,13 +1055,13 @@
 
                 <div class="frow">
                     <div>
-                        <label class="fl">담당고객 (마스터)</label>
+                        <div class="fl-row"><label class="fl">담당고객 (마스터)</label><button type="button" class="mini-add" onclick="openClientAdd()">+ 새로 추가</button></div>
                         <select id="fClient" class="fi">
                             <option value="">(고객사 선택)</option>
                         </select>
                     </div>
                     <div>
-                        <label class="fl">프로젝트 (마스터)</label>
+                        <div class="fl-row"><label class="fl">프로젝트 (마스터)</label><button type="button" class="mini-add" onclick="openProjectAdd()">+ 새로 추가</button></div>
                         <select id="fProject" class="fi" onchange="onProjectChange()">
                             <option value="">(프로젝트 선택)</option>
                         </select>
@@ -1107,7 +1118,10 @@
                 </div>
 
                 <div class="frow" style="align-items: flex-end;">
-                    <input type="hidden" id="fActualTime">
+                    <div style="width:110px">
+                        <label class="fl">작업 시간 <span style="color:var(--sub);font-weight:400;font-size:9px;">(시간)</span></label>
+                        <input type="number" id="fActualTime" class="fi" min="0" step="0.5" placeholder="예: 1.5">
+                    </div>
                     <div style="flex:1">
                         <label class="fl">작업 일자 <span style="color:var(--sub);font-weight:400;font-size:9px;">(주간보고 실적일)</span></label>
                         <input type="text" id="fAStart" class="fi" placeholder="YYYY. MM. DD" autocomplete="off">
@@ -1186,7 +1200,7 @@
             <div class="modal-body" style="gap: 16px;">
                 <div id="wtm-summary"
                     style="font-size:13px; color:var(--sub); border-bottom: 1px solid var(--border); padding-bottom: 10px;">
-                    실제 로그 기반 작업시간 (단위: 시간h)
+                    위키 작업일지 기준 작업시간
                 </div>
                 <div id="wtm-list"
                     style="display:flex; flex-direction:column; gap: 12px; overflow-y:auto; max-height:400px; padding-right:5px;">
@@ -1207,7 +1221,7 @@
             <div class="modal-body" style="gap: 16px;">
                 <div id="wrp-summary"
                     style="font-size:13px; color:var(--sub); border-bottom: 1px solid var(--border); padding-bottom: 10px;">
-                    금주 보고 대상 범위: <span id="wrp-cur-range" style="color:var(--text); font-weight:600;">-</span> <span id="wrp-unassigned" style="color:#d29922; font-weight:600; margin-left:8px;"></span>
+                    금주 보고 대상 범위: <span id="wrp-cur-range" style="color:var(--text); font-weight:600;">-</span> <span id="wrp-warn" style="color:#d29922; font-weight:600; margin-left:8px;"></span>
                 </div>
 
                 <div style="display:flex; flex-direction:column; gap: 20px;">
@@ -1275,7 +1289,9 @@
         let tasks = [];
         const WIKI_VAULT = 'Wiki';   // 옵시디언 볼트 이름 (노트 열기용)
         let logs = [];
-        let suggestions = [];   // time_suggestions (자동 제안). 표가 없으면 빈 목록
+        let workEntries = [];   // work_entries (위키 작업일지 시간). 표가 없으면 빈 목록
+        // 작업일지 시간 + '등록'에서 직접 넣은 시간 (작업시간 통계·주간보고 공통)
+        const allWorkEntries = () => (workEntries || []).concat(window.TL_entriesFromTasks ? TL_entriesFromTasks(tasks) : []);
         let clients = [];
         let projects = [];
         let sortKey = '', sortDesc = true;
@@ -1899,29 +1915,96 @@
         }
 
 
+        // 마스터 select 채우기 (selected 를 생략하면 현재 선택값 유지)
+        function fillClientOptions(selected) {
+            const sel = document.getElementById('fClient');
+            const keep = selected !== undefined ? selected : sel.value;
+            sel.innerHTML = '<option value="">(고객사 선택)</option>';
+            [...clients].sort((a, b) => String(a.name).localeCompare(String(b.name), 'ko'))
+                .forEach(c => sel.add(new Option(c.name, c.name)));
+            sel.value = keep || '';
+        }
+        function fillProjectOptions(selected) {
+            const sel = document.getElementById('fProject');
+            const keep = selected !== undefined ? selected : sel.value;
+            sel.innerHTML = '<option value="">(프로젝트 선택)</option>';
+            projects.forEach(p => sel.add(new Option(p.name, p.name)));
+            sel.value = keep || '';
+        }
+
+        // 고객사·프로젝트 '+ 새로 추가' (마스터 등록을 업무 등록 화면에서 한다)
+        let _qaType = null;   // 'client' | 'project'
+        function openClientAdd(prefillName) { openQuickAdd('client', prefillName); }
+        function openProjectAdd(prefillName) { openQuickAdd('project', prefillName); }
+        function openQuickAdd(type, prefillName) {
+            _qaType = type;
+            document.getElementById('qaTitle').textContent = type === 'client' ? '새 고객사 추가' : '새 프로젝트 추가';
+            document.getElementById('qaKindWrap').style.display = type === 'project' ? '' : 'none';
+            document.getElementById('qaKind').value = '프로젝트';
+            document.getElementById('qaSave').disabled = false;
+            const inp = document.getElementById('qaName');
+            inp.value = typeof prefillName === 'string' ? prefillName : '';
+            document.getElementById('qaOverlay').classList.add('open');
+            setTimeout(() => { inp.focus(); inp.select(); }, 0);
+        }
+        function closeQuickAdd() {
+            document.getElementById('qaOverlay').classList.remove('open');
+            _qaType = null;
+        }
+        function applyQuickAddSelection(type, name) {
+            if (type === 'client') {
+                fillClientOptions(name);
+            } else {
+                fillProjectOptions(name);
+                onProjectChange();
+            }
+        }
+        async function saveQuickAdd() {
+            const type = _qaType;
+            if (!type) return;
+            const inp = document.getElementById('qaName');
+            const name = inp.value.trim();
+            if (!name) { inp.focus(); return; }
+
+            const isClient = type === 'client';
+            const list = isClient ? clients : projects;
+            const exist = list.find(x => String(x.name || '').trim().toLowerCase() === name.toLowerCase());
+            if (exist) {   // 이미 있으면 새로 만들지 않고 기존 것을 선택
+                closeQuickAdd();
+                applyQuickAddSelection(type, exist.name);
+                return;
+            }
+
+            const item = isClient
+                ? { id: 'C' + Date.now(), name, contact: '', phone: '', memo: '' }
+                : { id: 'P' + Date.now(), name, status: 'active', icon: '📁', memo: '',
+                    kind: document.getElementById('qaKind').value || '프로젝트' };
+            const btn = document.getElementById('qaSave');
+            btn.disabled = true;
+            if (!isClient) projects.forEach(p => { if (!p.kind) p.kind = '프로젝트'; });
+            list.push(item);
+            try {
+                await supabaseAPI.upsert(isClient ? 'clients' : 'projects', list);
+            } catch (e) {
+                const i = list.indexOf(item);
+                if (i >= 0) list.splice(i, 1);
+                btn.disabled = false;
+                await TL_Alert('저장에 실패했습니다.\n\n' + (e && e.message ? e.message : e));
+                return;
+            }
+            btn.disabled = false;
+            closeQuickAdd();
+            applyQuickAddSelection(type, item.name);
+        }
+
         function openModal(id, prefill) {
             editId = id || null;
             document.getElementById('modalTitle').textContent = id ? '업무 수정' : '업무 등록';
 
             if (!fpStart) initFlatpickr();
 
-            const fClient = document.getElementById('fClient');
-            fClient.innerHTML = '<option value="">(고객사 선택)</option>';
-            [...clients].sort((a, b) => String(a.name).localeCompare(String(b.name), 'ko')).forEach(c => {
-                const opt = document.createElement('option');
-                opt.value = c.name;
-                opt.textContent = c.name;
-                fClient.appendChild(opt);
-            });
-
-            const fProject = document.getElementById('fProject');
-            fProject.innerHTML = '<option value="">(프로젝트 선택)</option>';
-            projects.forEach(p => {
-                const opt = document.createElement('option');
-                opt.value = p.name;
-                opt.textContent = p.name;
-                fProject.appendChild(opt);
-            });
+            fillClientOptions('');
+            fillProjectOptions('');
 
             if (id) {
                 const t = tasks.find(x => (x.id === id || x.seq === id));
@@ -2035,7 +2118,8 @@
                 if (dm) document.getElementById('fReqDate').value = `${dm[1]}. ${dm[2]}. ${dm[3]}`;
                 document.getElementById('fMailKey').value = prefill.mailkey || '';
                 if (prefill.client && document.getElementById('fClient').value !== prefill.client) {
-                    TL_Alert(`고객사 "${prefill.client}" 이(가) 고객사 목록에 없습니다.\n고객사를 직접 선택해 주세요.`);
+                    TL_Confirm(`고객사 "${prefill.client}" 이(가) 고객사 목록에 없습니다.\n\n고객사 목록에 추가할까요?\n(취소하면 목록에서 직접 선택)`)
+                        .then(ok => { if (ok) openClientAdd(prefill.client); });
                 }
             }
             document.getElementById('overlay').style.display = 'flex';
@@ -2290,7 +2374,7 @@
                     logs = loadedLogs;
                 }
 
-                try { suggestions = (await supabaseAPI.getTable('time_suggestions')) || []; } catch (e) { suggestions = []; }
+                try { workEntries = (await supabaseAPI.getTable('work_entries')) || []; } catch (e) { workEntries = []; }
 
                 render();
                 if (force) await TL_Alert('최신 데이터를 정상적으로 불러왔습니다.');
@@ -2318,8 +2402,7 @@
         let wtmWeek = 0;   // 0 이번 주(금~목), -1 지난 주, 'all' 전체
         function setWtmWeek(w) { wtmWeek = (w === 'all') ? 'all' : Number(w); renderWorkingTimeSummary(); }
 
-        // 프로젝트·고객사 운영 시간만 보여 준다 (주간보고와 같은 분류: 프로젝트가 있으면 프로젝트, 아니면 고객사 운영).
-        // 고객사가 없거나 '기타'인 할일, 주간보고 제외 고객사의 시간은 목록에서 빼고 '제외' 한 줄로만 알린다.
+        // 위키 작업일지(work_entries) 기준 작업시간. 종류(프로젝트·고객사 운영·내부/미등록) -> 항목 -> 작업명 행 순으로 3단계로 펼친다.
         function renderWorkingTimeSummary() {
             const listDiv = document.getElementById('wtm-list');
             const sumDiv = document.getElementById('wtm-summary');
@@ -2335,59 +2418,60 @@
             const from = wtmWeek === 'all' ? '0000-00-00' : iso(ws);
             const to = wtmWeek === 'all' ? '9999-99-99' : iso(we);
 
-            const excluded = window.TL_excludedClients ? TL_excludedClients() : new Set();
-            const taskMap = {};
-            (tasks || []).forEach(t => { if (t.id) taskMap[String(t.id)] = t; });
+            // 종류 -> 화면 묶음. 운영은 '고객사운영'으로 적힌 것도 같이 본다. 내부·미등록·그 밖은 '내부·기타'.
+            const groupOf = k => { k = String(k || '').trim(); return k === '프로젝트' ? '프로젝트' : (k === '운영' || k === '고객사운영') ? '고객 운영' : '내부·기타'; };
+            const CATS = ['프로젝트', '고객 운영', '내부·기타'];
+            const ICON = { '프로젝트': '📁', '고객 운영': '🏢', '내부·기타': '🗂️' };
+            const groups = { '프로젝트': new Map(), '고객 운영': new Map(), '내부·기타': new Map() };
+            const totals = { '프로젝트': 0, '고객 운영': 0, '내부·기타': 0 };
 
-            const CATS = ['프로젝트', '고객 운영'];
-            const groups = { '프로젝트': new Map(), '고객 운영': new Map() };
-            const totals = { '프로젝트': 0, '고객 운영': 0 };
-            let excludedMins = 0;
-
-            (logs || []).forEach(l => {
-                if (!l.duration || l.duration <= 0) return;
-                const day = l.start ? String(l.start).substring(0, 10).replace(/ /g, '') : '';
-                if (!day || day < from || day > to) return;
-                const task = taskMap[String(l.taskId)];
-                if (!task) return;
-                const client = String(task.client || '').trim();
-                if (!client || client === '기타' || excluded.has(client)) { excludedMins += l.duration; return; }
-                const proj = String(task.project || '').trim();
-                const isProj = !!(proj && proj !== '"' && proj !== '""');
-                const cat = isProj ? '프로젝트' : '고객 운영';
-                const name = isProj ? `${client} / ${proj}` : client;
-                if (!groups[cat].has(name)) groups[cat].set(name, { total: 0, days: new Map() });
+            allWorkEntries().forEach(e => {
+                const mins = Number(e.minutes) || 0;
+                const day = String(e.day || '').substring(0, 10);
+                if (mins <= 0 || !day || day < from || day > to) return;
+                const cat = groupOf(e.kind);
+                const name = String(e.item || '').trim() || String(e.project || '').trim() || String(e.client || '').trim() || '(항목 없음)';
+                if (!groups[cat].has(name)) groups[cat].set(name, { total: 0, rows: [] });
                 const g = groups[cat].get(name);
-                g.total += l.duration;
-                g.days.set(day, (g.days.get(day) || 0) + l.duration);
-                totals[cat] += l.duration;
+                g.total += mins;
+                g.rows.push({ day, title: String(e.title || '').trim() || '(작업명 없음)', mins });
+                totals[cat] += mins;
             });
+            const grand = totals['프로젝트'] + totals['고객 운영'] + totals['내부·기타'];
 
             const btn = (w, label) => `<button onclick="setWtmWeek('${w}')" style="padding:4px 10px; border-radius:6px; border:1px solid var(--border); cursor:pointer; font-size:12px; ${String(wtmWeek) === String(w) ? 'background:var(--primary); color:#fff;' : 'background:transparent; color:var(--text);'}">${label}</button>`;
             const range = wtmWeek === 'all' ? '전체 기간' : `${ws.getMonth() + 1}/${ws.getDate()} ~ ${we.getMonth() + 1}/${we.getDate()}`;
+            const tile = (label, v, color) => `<div style="flex:1; min-width:0; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:10px;"><div style="font-size:11px;">${label}</div><div style="font-size:16px; font-weight:bold; color:${color};">${fmt(v)}</div></div>`;
             sumDiv.innerHTML = `
                 <div style="display:flex; gap:6px; align-items:center; margin-bottom:10px;">${btn(0, '이번 주')}${btn(-1, '지난 주')}${btn('all', '전체')}<span style="margin-left:6px;">${range}</span></div>
-                <div style="display:flex; gap:12px;">
-                    <div style="flex:1; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:10px;"><div style="font-size:11px;">📁 프로젝트</div><div style="font-size:18px; font-weight:bold; color:var(--green);">${fmt(totals['프로젝트'])}</div></div>
-                    <div style="flex:1; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:10px;"><div style="font-size:11px;">🏢 고객사 운영</div><div style="font-size:18px; font-weight:bold; color:var(--green);">${fmt(totals['고객 운영'])}</div></div>
-                </div>
-                ${excludedMins > 0 ? `<div style="font-size:11px; margin-top:8px;">제외된 기록 ${fmt(excludedMins)} (고객사 없음·기타·내부)</div>` : ''}`;
+                <div style="display:flex; gap:8px;">
+                    ${tile('∑ 합계', grand, 'var(--text)')}
+                    ${tile('📁 프로젝트', totals['프로젝트'], 'var(--green)')}
+                    ${tile('🏢 고객사 운영', totals['고객 운영'], 'var(--green)')}
+                    ${tile('🗂️ 내부·기타', totals['내부·기타'], 'var(--sub)')}
+                </div>`;
 
             const html = CATS.map(cat => {
                 const items = [...groups[cat].entries()].sort((a, b) => b[1].total - a[1].total);
                 if (!items.length) return '';
-                const icon = cat === '프로젝트' ? '📁' : '🏢';
-                return `<div style="font-size:12px; font-weight:bold; margin-top:4px;">${icon} ${cat}</div>` + items.map(([name, g]) => `
-                    <details style="background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:10px 12px;">
-                        <summary style="display:flex; justify-content:space-between; cursor:pointer; font-size:14px; font-weight:600; color:var(--text);">
-                            <span>${h(name)}</span><span style="color:var(--green);">${fmt(g.total)}</span>
+                const inner = items.map(([name, g]) => `
+                    <details style="background:rgba(255,255,255,0.03); border:1px solid var(--border); border-radius:8px; padding:8px 10px;">
+                        <summary style="display:flex; justify-content:space-between; gap:8px; cursor:pointer; font-size:13px; font-weight:600; color:var(--text);">
+                            <span>${h(name)}</span><span style="color:var(--green); white-space:nowrap;">${fmt(g.total)}</span>
                         </summary>
-                        <div style="margin-top:8px; display:flex; flex-direction:column; gap:4px;">
-                            ${[...g.days.entries()].sort((a, b) => b[0].localeCompare(a[0])).map(([d, m]) => `<div style="display:flex; justify-content:space-between; font-size:12px; color:var(--sub);"><span>${d}</span><span>${fmt(m)}</span></div>`).join('')}
+                        <div style="margin-top:6px; display:flex; flex-direction:column; gap:3px;">
+                            ${g.rows.sort((a, b) => b.day.localeCompare(a.day) || b.mins - a.mins).map(r => `<div style="display:flex; justify-content:space-between; gap:8px; font-size:12px; color:var(--sub);"><span>${r.day.substring(5)} · ${h(r.title)}</span><span style="white-space:nowrap;">${fmt(r.mins)}</span></div>`).join('')}
                         </div>
                     </details>`).join('');
+                return `<details open style="background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:10px 12px;">
+                    <summary style="display:flex; justify-content:space-between; cursor:pointer; font-size:14px; font-weight:bold; color:var(--text);">
+                        <span>${ICON[cat]} ${cat}</span><span style="color:var(--green);">${fmt(totals[cat])}</span>
+                    </summary>
+                    <div style="margin-top:8px; display:flex; flex-direction:column; gap:6px;">${inner}</div>
+                </details>`;
             }).join('');
-            listDiv.innerHTML = html || '<div style="font-size:13px; color:var(--sub); text-align:center; padding: 20px;">이 기간에 프로젝트·고객사 운영 기록이 없습니다.</div>';
+            listDiv.innerHTML = (html || '<div style="font-size:13px; color:var(--sub); text-align:center; padding: 20px;">이 기간에 위키 작업일지 시간이 없습니다.</div>')
+                + '<div style="font-size:11px; color:var(--sub); text-align:center;">위키 작업일지 기준</div>';
         }
 
         // --- 주간보고 미리보기 로직 ---
@@ -2497,28 +2581,22 @@
                 });
             };
 
-            // 자동 제안 1차: 그 주에 확인된 기록(logs)이 있는 할일도 금주 실적. 미배정 확인 시간은 경고 한 줄만
-            const loggedIds = window.TL_Suggest ? TL_Suggest.taskIdsWithLogs(logs, startDate, endDate) : new Set();
-            const unassignedMin = window.TL_Suggest ? TL_Suggest.unassignedMinutes(suggestions, startDate, endDate) : 0;
-            const wrpWarn = document.getElementById('wrp-unassigned');
-            if (wrpWarn) wrpWarn.innerText = unassignedMin > 0 ? `⚠ 미배정 ${(unassignedMin / 60).toFixed(1)}시간은 포함되지 않았습니다.` : '';
-
-            // 금주 실적·차주 일정 판정은 weeklyReportExcel.js 의 reportFlags 한 곳 (app.py report_flags 와 같은 로직)
+            // 금주 실적 = 위키 작업일지(work_entries)의 운영·프로젝트 작업명, 차주·이슈 = 할일.
+            // 판정은 weeklyReportExcel.js 의 TL_curFromEntries · TL_reportFlags 한 곳 (app.py 와 같은 로직)
             const excluded = window.TL_excludedClients ? TL_excludedClients() : new Set();
             let missingClient = 0;
+            curArr = window.TL_curFromEntries ? TL_curFromEntries(allWorkEntries(), startDate, endDate, excluded) : [];
+            missingClient = curArr.filter(i => i.client === '미지정').length;
             (tasks || []).forEach(t => {
                 if (excluded.has(String(t.client || '').trim())) return;
-                const [isCur, isNext] = window.TL_reportFlags
-                    ? TL_reportFlags(t, startDate, endDate, nextStartDate, nextEndDate, loggedIds)
+                const [isNext, isIssue] = window.TL_reportFlags
+                    ? TL_reportFlags(t, startDate, endDate, nextStartDate, nextEndDate)
                     : [false, false];
-                if (isCur) {
-                    curArr.push(t);
-                    if (t.isIssue) issueArr.push(t);
-                    if (!String(t.client || '').trim()) missingClient++;
-                }
                 if (isNext) nextArr.push(t);
+                if (isIssue) issueArr.push(t);
             });
-            if (wrpWarn && missingClient > 0) wrpWarn.innerText += ` ⚠ 고객사가 없는 요청 ${missingClient}건 — 고객사를 넣어 주세요.`;
+            const wrpWarn = document.getElementById('wrp-warn');
+            if (wrpWarn) wrpWarn.innerText = missingClient > 0 ? `⚠ 고객사가 없는 작업일지 ${missingClient}건이 '미지정'으로 들어갑니다.` : '';
 
             const curMerged = mergeWeeklyByClient(curArr, 'cur');
             const nextMerged = mergeWeeklyByClient(nextArr, 'next');
@@ -2540,7 +2618,7 @@
                 const datePart = showDate && t._minDate ? `<span style="color:var(--sub); font-size:10px; margin-left:6px;">📅 ${fmtShort(t._minDate)}</span>` : '';
                 return `
                 <div style="display:flex; justify-content:space-between; align-items:center; padding: 6px 8px; background:rgba(255,255,255,0.03); border-radius:6px; font-size:12px; border:1px solid rgba(255,255,255,0.05);">
-                    <div style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer;" onclick="isFromWeeklyReport = true; closeWeeklyReportPreview(); openModal('${t.id || t.seq}')" title="수정하기">
+                    <div style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; ${(t.id || t.seq) ? 'cursor:pointer;' : ''}" ${(t.id || t.seq) ? `onclick="isFromWeeklyReport = true; closeWeeklyReportPreview(); openModal('${t.id || t.seq}')" title="수정하기"` : 'title="위키 작업일지 기준"'}>
                         <span style="color:var(--sub); font-size:11px;">[${t.client || t.project || '-'}]</span> ${t.title}
                         ${datePart}
                     </div>
@@ -2569,7 +2647,7 @@
 
                 // GitHub Pages 등 백엔드가 없는 환경: 브라우저에서 직접 엑셀 생성
                 if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
-                    const fileName = await generateWeeklyReportExcel(tasks, user, logs);
+                    const fileName = await generateWeeklyReportExcel(tasks, user, allWorkEntries());
                     const mcWarn = window._tlMissingClient > 0 ? `<br><br><b style="color:#d29922">⚠ 고객사가 없는 요청 ${window._tlMissingClient}건이 '미지정'으로 들어갔습니다. 고객사를 넣고 다시 만드세요.</b>` : '';
                     await TL_Alert(`✅ 주간보고 엑셀(<b>${fileName}</b>)이 생성되어 다운로드 폴더에 저장되었습니다.${mcWarn}<br><br>브라우저의 <b>다운로드 목록</b>에서 파일을 열어주세요!`);
                     return;
@@ -2587,8 +2665,7 @@
                     window._tlLastReportUrl = downloadUrl;
                     await tlApiDownload(downloadUrl);
 
-                    const unWarn = (result.unassigned_min > 0 ? `<br><br><b style="color:#d29922">⚠ 미배정 ${(result.unassigned_min / 60).toFixed(1)}시간은 포함되지 않았습니다.</b>` : '')
-                        + (result.missing_client > 0 ? `<br><br><b style="color:#d29922">⚠ 고객사가 없는 요청 ${result.missing_client}건이 '미지정'으로 들어갔습니다. 고객사를 넣고 다시 만드세요.</b>` : '');
+                    const unWarn = (result.missing_client > 0 ? `<br><br><b style="color:#d29922">⚠ 고객사가 없는 요청 ${result.missing_client}건이 '미지정'으로 들어갔습니다. 고객사를 넣고 다시 만드세요.</b>` : '');
                     await TL_Alert(`✅ 주간보고 엑셀이 생성되어 다운로드 폴더에 저장되었습니다.${unWarn}<br><br>브라우저 상단(또는 하단)의 <b>다운로드 완료 목록</b>에서 파일을 클릭하여 바로 엑셀을 열어주세요!<br><br><span style="font-size:12px;color:gray;">만약 다운로드가 자동으로 시작되지 않았다면 <a href="#" onclick="tlApiDownload(window._tlLastReportUrl).catch(e => alert(e.message)); return false;" style="color:#005fb8; font-weight:bold; text-decoration:underline;">[수동 다운로드]</a>를 클릭하세요.</span>`);
                 } else {
                     throw new Error(result.error || '알 수 없는 오류');
@@ -2770,6 +2847,28 @@
         setInterval(updateMiniTimer, 1000);
         updateMiniTimer();
     </script>
+
+    <!-- 고객사·프로젝트 간이 추가 (업무 등록 화면 위에 뜬다) -->
+    <div id="qaOverlay" class="qa-overlay" onclick="if(event.target===this)closeQuickAdd()">
+        <div class="qa-box" role="dialog" aria-modal="true">
+            <div class="qa-title" id="qaTitle">새로 추가</div>
+            <label class="fl">이름</label>
+            <input id="qaName" class="fi" type="text" autocomplete="off"
+                onkeydown="if(event.key==='Enter'){event.preventDefault();saveQuickAdd();}else if(event.key==='Escape'){event.stopPropagation();closeQuickAdd();}">
+            <div id="qaKindWrap" style="display:none;margin-top:8px">
+                <label class="fl">종류</label>
+                <select id="qaKind" class="fi">
+                    <option value="운영">운영</option>
+                    <option value="프로젝트" selected>프로젝트</option>
+                    <option value="내부">내부</option>
+                </select>
+            </div>
+            <div class="qa-actions">
+                <button type="button" class="qa-btn" onclick="closeQuickAdd()">취소</button>
+                <button type="button" class="qa-btn qa-primary" id="qaSave" onclick="saveQuickAdd()">저장</button>
+            </div>
+        </div>
+    </div>
 </body>
 
 

@@ -423,6 +423,10 @@
             padding: 6px 10px !important;
             line-height: 1 !important;
         }
+        .kind-badge { display: inline-block; font-size: 11px; line-height: 1.5; padding: 0 6px; border-radius: 10px; margin-right: 6px; vertical-align: middle; border: 1px solid currentColor; }
+        .kind-ops { color: #d97706; }
+        .kind-proj { color: var(--primary); }
+        .kind-internal { color: #8b949e; }
     </style>
 </head>
 
@@ -481,6 +485,14 @@
                     </select>
                 </div>
                 <div>
+                    <label class="fl">종류</label>
+                    <select id="fKind" class="fi">
+                        <option value="운영">운영</option>
+                        <option value="프로젝트" selected>프로젝트</option>
+                        <option value="내부">내부</option>
+                    </select>
+                </div>
+                <div>
                     <label class="fl">아이콘 (이모지)</label>
                     <input id="fIcon" class="fi" placeholder="📁" maxlength="2" value="📁">
                 </div>
@@ -514,13 +526,18 @@
     </nav>
 
     <script>
+        const PROJECT_KINDS = ['운영', '프로젝트', '내부'];   // 위키 작업항목 표의 '종류'를 대체
+        const DEFAULT_KIND = '프로젝트';
+        const normKind = k => PROJECT_KINDS.includes(k) ? k : DEFAULT_KIND;
+        const withKind = arr => { arr.forEach(p => { p.kind = normKind(p.kind); }); return arr; };
+        const kindBadge = k => { const kd = normKind(k); return `<span class="kind-badge kind-${{ '운영': 'ops', '프로젝트': 'proj', '내부': 'internal' }[kd]}">${kd}</span>`; };
         let projects = [];
         let tasks = [];
         let logs = [];
         let editId = null;
 
         async function save() {
-            try { await supabaseAPI.upsert('projects', projects); } catch (e) { console.error("DB Save failed:", e); }
+            try { await supabaseAPI.upsert('projects', withKind(projects)); } catch (e) { console.error("DB Save failed:", e); }
         }
 
         function openModal() { resetForm(); document.getElementById('modalOverlay').style.display = 'flex'; }
@@ -564,7 +581,7 @@
                 return `<div class="proj-row">
                     <div class="proj-row-icon">${p.icon || '📁'}</div>
                     <div class="proj-row-info">
-                        <div class="proj-row-name">${sIcon} ${p.name}</div>
+                        <div class="proj-row-name">${sIcon} ${kindBadge(p.kind)}${p.name}</div>
                         <div class="proj-row-meta" title="${p.memo || ''}">${p.memo || '설명 없음'}</div>
                     </div>
                     <div class="proj-row-stats">
@@ -583,17 +600,17 @@
         async function saveProject() {
             const name = document.getElementById('fName').value.trim();
             if (!name) return;
-            const obj = { id: editId || ('P' + Date.now()), name, status: document.getElementById('fStatus').value, icon: document.getElementById('fIcon').value || '📁', memo: document.getElementById('fMemo').value.trim() };
+            const obj = { id: editId || ('P' + Date.now()), name, status: document.getElementById('fStatus').value, kind: normKind(document.getElementById('fKind').value), icon: document.getElementById('fIcon').value || '📁', memo: document.getElementById('fMemo').value.trim() };
             if (editId) { const i = projects.findIndex(p => p.id === editId); projects[i] = obj; } else projects.push(obj);
             await save(); renderList(); closeModal(); if (!editId) alert('등록되었습니다.');
         }
 
-        function resetForm() { editId = null; document.getElementById('formTitle').textContent = '프로젝트 등록'; document.getElementById('fName').value = ''; document.getElementById('fStatus').value = 'active'; document.getElementById('fIcon').value = '📁'; document.getElementById('fMemo').value = ''; }
+        function resetForm() { editId = null; document.getElementById('formTitle').textContent = '프로젝트 등록'; document.getElementById('fName').value = ''; document.getElementById('fStatus').value = 'active'; document.getElementById('fKind').value = DEFAULT_KIND; document.getElementById('fIcon').value = '📁'; document.getElementById('fMemo').value = ''; }
 
         window.editProject = id => {
             const p = projects.find(x => x.id === id); editId = id;
             document.getElementById('formTitle').textContent = '프로젝트 수정';
-            document.getElementById('fName').value = p.name; document.getElementById('fStatus').value = p.status;
+            document.getElementById('fName').value = p.name; document.getElementById('fStatus').value = p.status; document.getElementById('fKind').value = normKind(p.kind);
             document.getElementById('fIcon').value = p.icon || '📁'; document.getElementById('fMemo').value = p.memo || '';
             document.getElementById('modalOverlay').style.display = 'flex';
         };

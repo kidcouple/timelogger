@@ -34,6 +34,10 @@ TABLES = {
         "pk": "sessionid",
         "columns": ["sessionid", "taskid", "tasktitle", "start", "end", "duration", "username"],
     },
+    "work_entries": {   # 위키 작업일지 시간 (맥미니 worklog_time_bridge.py 가 올림)
+        "pk": "id",
+        "columns": ["id", "day", "itemid", "item", "kind", "client", "project", "title", "minutes", "pc", "username", "updatedat"],
+    },
     "weekly_reports": {
         "pk": "id",
         "columns": ["id", "report_date", "week_label", "content_json", "username", "created_at"],

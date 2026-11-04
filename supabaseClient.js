@@ -8,6 +8,7 @@ const fieldMap = {
     isissue: 'isIssue', issuememo: 'issueMemo', issueprogress: 'issueProgress', issuefollowup: 'issueFollowUp',
     isurgent: 'isUrgent', isimportant: 'isImportant',
     clientalias: 'clientAlias', logid: 'logId', updatedat: 'updatedAt',   // time_suggestions
+    itemid: 'itemId',   // work_entries
     username: 'userName'
 };
 
