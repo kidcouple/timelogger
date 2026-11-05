@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Time Logger 의 고객사·프로젝트(Supabase clients·projects)를 위키 70_작업일지/프로젝트.md 로 자동 생성한다 (items_export.py). 10분마다 한 번 돌고 끝난다.
+  앱이 원본이다. 위키 파일을 직접 고치면 다음 실행 때 덮어쓴다.
+  설치 (맥미니에서 사용자가, 먼저 Database/items_unify.sql 실행 + items_import_once.py(apply 옵션) 로 이관):
+    cd /Users/sunkyunhwang/Masking/wiki-tools/worklog
+    curl -fsSLO https://raw.githubusercontent.com/kidcouple/timelogger/github-main/mac_mini/items_export.py
+    curl -fsSL -o ~/Library/LaunchAgents/com.timelogger.items-export.plist https://raw.githubusercontent.com/kidcouple/timelogger/github-main/mac_mini/com.timelogger.items-export.plist
+    launchctl load ~/Library/LaunchAgents/com.timelogger.items-export.plist
+  (worklog_time_bridge.py 를 같은 폴더에 import 하므로 그 폴더에 있어야 한다.)
+  먼저 시험: python3 items_export.py (dry-run 옵션)
+  상태 확인: launchctl list | grep items-export     로그: tail -f /Users/sunkyunhwang/Library/Logs/items-export.log
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.timelogger.items-export</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>-u</string>
+    <string>/Users/sunkyunhwang/Masking/wiki-tools/worklog/items_export.py</string>
+    <string>--out</string>
+    <string>/Users/sunkyunhwang/Wiki/70_작업일지/프로젝트.md</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/sunkyunhwang/Masking/wiki-tools/worklog</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/Users/sunkyunhwang/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>LANG</key>
+    <string>ko_KR.UTF-8</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StartInterval</key>
+  <integer>600</integer>
+  <key>StandardOutPath</key>
+  <string>/Users/sunkyunhwang/Library/Logs/items-export.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/sunkyunhwang/Library/Logs/items-export.log</string>
+</dict>
+</plist>

@@ -179,7 +179,16 @@ def parse_minutes(text):
 
 
 def parse_worklog(path):
-    """-> dict(title, fields) 머리줄('- 날짜: ...')과 '# 제목'. 머리줄이 없으면 fields 는 빈 dict."""
+    """-> dict(title, fields) 머리줄('- 날짜: ...')과 '# 제목'. 머리줄이 없으면 fields 는 빈 dict.
+    11-05: 드라이브 파일이 맥에 내려와 있지 않으면(launchd 에서 읽기 실패) 빈 일지로 보고 건너뛴다."""
+    try:
+        return _parse_worklog(path)
+    except OSError as e:
+        print("읽기 실패(건너뜀):", os.path.basename(path)[:10], e.errno, file=sys.stderr)
+        return {"title": "", "fields": {}}
+
+
+def _parse_worklog(path):
     title, fields, in_front, started = "", {}, False, False
     with open(path, encoding="utf-8") as f:
         for i, ln in enumerate(f):

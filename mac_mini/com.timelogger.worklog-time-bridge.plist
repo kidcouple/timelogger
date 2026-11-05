@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  위키 작업일지 시간을 Supabase work_entries 로 올린다 (worklog_time_bridge.py). 10분마다 한 번 돌고 끝난다.
+  설치 (맥미니에서 사용자가):
+    mkdir -p /Users/sunkyunhwang/Masking/wiki-tools/worklog
+    cd /Users/sunkyunhwang/Masking/wiki-tools/worklog
+    curl -fsSLO https://raw.githubusercontent.com/kidcouple/timelogger/github-main/mac_mini/worklog_time_bridge.py
+    curl -fsSL -o ~/Library/LaunchAgents/com.timelogger.worklog-time-bridge.plist https://raw.githubusercontent.com/kidcouple/timelogger/github-main/mac_mini/com.timelogger.worklog-time-bridge.plist
+    launchctl load ~/Library/LaunchAgents/com.timelogger.worklog-time-bridge.plist
+  먼저 시험: python3 worklog_time_bridge.py --dry-run --vault ~/Wiki --days 7
+  필요한 것: Database/work_entries.sql 실행, 키체인 wiki-supabase(또는 메일 폴더 .env), items.py 위치(TIMELOG_TOOLS)
+  상태 확인: launchctl list | grep worklog-time-bridge     로그: tail -f /Users/sunkyunhwang/Library/Logs/worklog-time-bridge.log
+  바로 한 번 돌리기: launchctl kickstart -k gui/$(id -u)/com.timelogger.worklog-time-bridge
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.timelogger.worklog-time-bridge</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-c</string>
+    <string>/usr/bin/python3 -u /Users/sunkyunhwang/Masking/wiki-tools/worklog/worklog_time_bridge.py --days 40</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/sunkyunhwang/Masking/wiki-tools/worklog</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/Users/sunkyunhwang/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>LANG</key>
+    <string>ko_KR.UTF-8</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StartInterval</key>
+  <integer>600</integer>
+  <key>StandardOutPath</key>
+  <string>/Users/sunkyunhwang/Library/Logs/worklog-time-bridge.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/sunkyunhwang/Library/Logs/worklog-time-bridge.log</string>
+</dict>
+</plist>
