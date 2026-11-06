@@ -151,11 +151,22 @@
         return { name: hit.join(' / '), why: '제목으로 추정' + (hit.length > 1 ? ' (후보 여러 개)' : ''), single: hit.length === 1 };
     }
 
+    // 11-06: hint(맥이 판정한 고객사 근거) 열 — SQL 실행 전이면 열이 없어 400 이 나므로 예전 열로 다시 읽는다
+    let hasHint = true;
+    async function loadOpen() {
+        const base = 'key,kind,date,age,client,subject,gmail';
+        if (hasHint) {
+            try { return await api('GET', `select=${base},hint&status=eq.open&order=age.asc`); }
+            catch (e) { if (/hint/i.test(String(e && e.message))) hasHint = false; else throw e; }   // 열 없음(PostgREST 메시지에 hint) 만 되돌림
+        }
+        return api('GET', `select=${base}&status=eq.open&order=age.asc`);
+    }
+
     async function load() {
         if (!loadAuth()) { state = 'login'; render(); return; }
         if (state !== 'ok') { state = 'loading'; syncMsg = syncMsg || '불러오는 중..'; render(); }
         try {
-            rows = (await api('GET', 'select=key,kind,date,age,client,subject,gmail&status=eq.open&order=age.asc')).filter(keepRow);
+            rows = (await loadOpen()).filter(keepRow);
             replied = await loadReplied();
             state = 'ok';
             syncMsg = '';
@@ -205,7 +216,7 @@
             syncMsg = '목록 불러오는 중…';
             render();
             showMailBusy(syncMsg);
-            rows = (await api('GET', 'select=key,kind,date,age,client,subject,gmail&status=eq.open&order=age.asc')).filter(keepRow);
+            rows = (await loadOpen()).filter(keepRow);
             replied = await loadReplied();
             state = 'ok';
             syncMsg = '';
@@ -346,7 +357,7 @@
         const guess = client ? null : guessClient(r);
         const clientCell = guess
             ? `<span class="mf-client mf-guess" title="${esc(guess.name + ' — ' + guess.why)}">${esc(guess.name)}?</span>`
-            : `<span class="mf-client" title="${esc(client)}">${esc(client || '-')}</span>`;
+            : `<span class="mf-client" title="${esc(client + (r.hint && r.client && r.client !== '-' ? ' — 근거: ' + r.hint : ''))}">${esc(client || '-')}</span>`;
         return `<div class="mf-row">
             <span class="mf-kind" style="border-color:${color};color:${color}">${esc(label)}</span>
             ${clientCell}

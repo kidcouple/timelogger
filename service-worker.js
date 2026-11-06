@@ -1,4 +1,4 @@
-const CACHE_NAME = 'time-logger-v45';
+const CACHE_NAME = 'time-logger-v46';
 const ASSETS = [
   './',
   './index.html',
