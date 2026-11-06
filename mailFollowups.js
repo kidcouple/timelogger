@@ -107,6 +107,50 @@
     }
     const registeredTask = key => (window.TL_getTasks ? TL_getTasks() : []).find(t => t.mailkey === key);
 
+    // ---------- 고객사 추정 (맥미니가 보낸 사람으로 못 찾은 행) ----------
+    // 공개 저장소이므로 고객사명은 코드에 두지 않고 앱의 고객사 목록(이름·별칭)만 쓴다.
+    // 순서: ① 같은 제목으로 이미 등록한 요청의 고객사 ② 제목의 [태그] ③ 제목 본문. 같은 길이로 여러 곳이 맞으면 모두 보여 준다.
+    const squash = s => String(s || '').toLowerCase().replace(/[\s\-_·]+/g, '');
+    function clientTerms() {
+        const out = [];
+        for (const c of (window.TL_getClients ? TL_getClients() : [])) {
+            const name = String(c && c.name || '').trim();
+            if (!name) continue;
+            const core = name.replace(/\(주\)|㈜|주식회사/g, '').replace(/^한국/, '').replace(/\s*제약$/, '').replace(/-[A-Z]$/i, '').trim();
+            const manual = String(c.aliases || '').split(/[,，]/).map(s => s.trim());
+            for (const w of new Set([name, core, ...manual])) {
+                const k = squash(w);
+                if (k.length >= 2) out.push({ client: name, k });
+            }
+        }
+        return out;
+    }
+    function matchIn(text, terms) {
+        const t = squash(text);
+        let best = 0, hit = new Set();
+        for (const { client, k } of terms) {
+            // 영문·숫자 별칭은 앞뒤가 영문·숫자가 아닐 때만 (IFRS18 안의 'RS' 같은 오인 방지)
+            const ok = /^[a-z0-9]+$/.test(k)
+                ? new RegExp(`(^|[^a-z0-9])${k}([^a-z0-9]|$)`).test(String(text || '').toLowerCase().replace(/[\s_·]+/g, ' '))
+                : t.includes(k);
+            if (!ok) continue;
+            if (k.length > best) { best = k.length; hit = new Set([client]); }
+            else if (k.length === best) hit.add(client);
+        }
+        return [...hit];
+    }
+    function guessClient(r) {
+        const title = squash(cleanTitle(r.subject));
+        const same = (window.TL_getTasks ? TL_getTasks() : []).find(t => t.client && title && squash(cleanTitle(t.title)) === title);
+        if (same) return { name: same.client, why: '같은 제목으로 등록한 요청의 고객사' };
+        const terms = clientTerms();
+        const tags = (String(r.subject || '').match(/[\[【]([^\]】]+)[\]】]/g) || []).join(' ');
+        let hit = tags ? matchIn(tags, terms) : [];
+        if (!hit.length) hit = matchIn(cleanTitle(r.subject), terms);
+        if (!hit.length) return null;
+        return { name: hit.join(' / '), why: '제목으로 추정' + (hit.length > 1 ? ' (후보 여러 개)' : ''), single: hit.length === 1 };
+    }
+
     async function load() {
         if (!loadAuth()) { state = 'login'; render(); return; }
         if (state !== 'ok') { state = 'loading'; syncMsg = syncMsg || '불러오는 중..'; render(); }
@@ -297,10 +341,15 @@
         const link = safeGmail(r.gmail);
         const regTask = registeredTask(r.key);
         // 보낸 사람으로 고객사를 알 수 없으면(빈칸·'-') 주간보고 등록 때 입력한 고객사를 보여 준다
-        const client = (r.client && r.client !== '-') ? r.client : ((regTask && regTask.client) || '');
+        let client = (r.client && r.client !== '-') ? r.client : ((regTask && regTask.client) || '');
+        // 그래도 비면 제목·이전 등록으로 추정해 흐린 기울임꼴 + '?' 로 표시 (확정 아님)
+        const guess = client ? null : guessClient(r);
+        const clientCell = guess
+            ? `<span class="mf-client mf-guess" title="${esc(guess.name + ' — ' + guess.why)}">${esc(guess.name)}?</span>`
+            : `<span class="mf-client" title="${esc(client)}">${esc(client || '-')}</span>`;
         return `<div class="mf-row">
             <span class="mf-kind" style="border-color:${color};color:${color}">${esc(label)}</span>
-            <span class="mf-client" title="${esc(client)}">${esc(client || '-')}</span>
+            ${clientCell}
             <span class="mf-subject" title="${esc(r.subject)}">${esc(r.subject || '(제목 없음)')}</span>
             <span class="mf-age" style="color:${ageColor}" title="${esc(when.title)}">${esc(when.label)}</span>
             <span class="mf-actions">
@@ -383,7 +432,10 @@
                     }
                     return;
                 }
-                TL_openTaskFromMail({ title: cleanTitle(r.subject), client: r.client && r.client !== '-' ? r.client : '', date: r.date, reqType: '메일', mailkey: r.key });
+                // 고객사가 비면 추정값이 하나일 때만 미리 채운다 (등록 화면에서 확인·수정)
+                const g = (r.client && r.client !== '-') ? null : guessClient(r);
+                const client = (r.client && r.client !== '-') ? r.client : (g && g.single ? g.name : '');
+                TL_openTaskFromMail({ title: cleanTitle(r.subject), client, date: r.date, reqType: '메일', mailkey: r.key });
             };
         });
         card.querySelectorAll('.mf-fin').forEach(b => {
@@ -414,6 +466,7 @@
         #mailFollowupCard .mf-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-top: 1px solid var(--border); font-size: 13px; }
         #mailFollowupCard .mf-kind { flex: none; width: 48px; text-align: center; box-sizing: border-box; font-size: 11px; border: 1px solid; border-radius: 4px; padding: 0 5px; white-space: nowrap; }
         #mailFollowupCard .mf-client { flex: 0 0 120px; color: var(--sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        #mailFollowupCard .mf-guess { font-style: italic; opacity: .75; }
         #mailFollowupCard .mf-subject { flex: 1; min-width: 0; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         #mailFollowupCard .mf-age { flex: none; width: 52px; text-align: right; font-size: 12px; font-variant-numeric: tabular-nums; }
         #mailFollowupCard .mf-actions { flex: none; display: flex; gap: 6px; }

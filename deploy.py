@@ -1,8 +1,9 @@
+
 """Time Logger 배포 스크립트
 
     python deploy.py cloudrun             Cloud Run 빌드 + 배포
     python deploy.py cloudrun --no-bump   서비스워커 캐시 버전을 올리지 않음
-    python deploy.py pages                현재 브랜치를 origin/main 으로 push (GitHub Pages)
+    python deploy.py pages                현재 브랜치를 origin/github-main 으로 push (GitHub Pages)
 
 환경변수 GCP_PROJECT, SERVICE, REGION 으로 기본값을 덮어쓸 수 있다.
 """
@@ -64,8 +65,9 @@ def deploy_pages():
     dirty = run(["git", "status", "--porcelain", "--untracked-files=no"], capture=True)
     if dirty:
         sys.exit("커밋되지 않은 변경이 있습니다. 먼저 커밋하세요:\n" + dirty)
-    print(f"▶ GitHub push: {branch} → origin/main")
-    run(["git", "push", "origin", f"{branch}:main"])
+    # GitHub Pages 는 github-main 브랜치를 배포한다
+    print(f"▶ GitHub push: {branch} → origin/github-main")
+    run(["git", "push", "origin", f"{branch}:github-main"])
 
 
 def main():

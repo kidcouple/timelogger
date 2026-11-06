@@ -2298,6 +2298,7 @@
 
         // 메일 회신 카드(mailFollowups.js)가 쓰는 연결점
         window.TL_getTasks = () => tasks;
+        window.TL_getClients = () => clients;   // 메일 카드: 고객사 빈 행을 제목으로 추정할 때 이름·별칭 사용
         window.TL_openTaskFromMail = m => openModal(null, m);
         window.TL_editTask = id => openModal(id);
         // 메일 카드의 [완료 처리]: 수정 화면을 열고 상태=완료, 완료일=회신일+2일을 채운다 (사용자가 확인·수정 후 저장)
@@ -2377,6 +2378,7 @@
                 try { workEntries = (await supabaseAPI.getTable('work_entries')) || []; } catch (e) { workEntries = []; }
 
                 render();
+                if (window.TL_mailRender) window.TL_mailRender();   // 고객사·요청 목록이 늦게 와도 메일 카드 고객사 추정을 다시 계산
                 if (force) await TL_Alert('최신 데이터를 정상적으로 불러왔습니다.');
             } catch (e) {
                 console.error('DB load failed:', e);
